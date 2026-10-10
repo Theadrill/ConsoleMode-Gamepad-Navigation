@@ -181,6 +181,19 @@ Teste espelha o harness do OctoLogin (Wine + XInput virtual).
   N=286 frames (nomes stock RealmList*/GlueDialog*/AddonList* confirmados,
   posicoes GetTop/GetLeft ok). 1.12: `IsVisible` devolve 1 ou nil —
   inventario v2 registra SO visivel (some o ruido escondido).
+- **F2b-2 — Navegacao do login (vale tudo):** `gluepad.lua` vira nucleo
+  (zonas empiricas CENTRO/CONTAS/LINKS/SISTEMA, `LockHighlight`/caret,
+  UP/DOWN com wrap, LEFT/RIGHT troca, A `:Click()`, B volta sem quitar,
+  X/Y reservados). Bypass de teclado em glue: engole TODA injetada
+  (menos carimbo proprio), fisica intacta, mouse intacto; A/B com edge,
+  D-pad com repeat; intents via `WM_APP+8` (main thread); chunks
+  blindados (`if` sem helper = no-op). Mundo: passa tudo (gate isw).
+  Critério: login navegavel vendo o azul + A/B certos, sem mouse.
+  PROVADO in-game (movimento): D-pad move foco (caret + hover-glow),
+  bootstrap preguicoso no 1o toque (ARMED desnecessario p/ navegar).
+  Highlight = textura de hover presa (linguagem Vanilla de botao; azul
+  chapado e de listas). A confirmado (login -> char via pad); B no login
+  ok. Char-select/realm/dialogos SEM resposta (fases F3/F4/F5, nao bugs).
   PROVADO in-game: `run=0` x10 sem crash (ponte viva). `IsOnGlueScreen`
   e `GetLoginScreenState` NAO existem no glue (assert falhou). Chunk com
   erro abre dialog de script — asserts removidos (F2a-fix2, sondas

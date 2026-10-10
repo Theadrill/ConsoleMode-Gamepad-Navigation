@@ -1,7 +1,8 @@
 #include "glue.h"
 #include "glog.h"
 #include "screen.h"
-#include "glue_lua.h" /* GLUEPAD_LUA_DUMP (gerado no build, validado luac50) */
+#include "keycap.h"
+#include "glue_lua.h" /* GLUEPAD_LUA_NAV (gerado no build, validado luac50) */
 
 /* Enderecos 5875 (plano, secao 3). Chamada direta: nossa DLL esta dentro
  * do processo (sem ASLR no 1.12). Leitura guardada antes de chamar. */
@@ -203,6 +204,8 @@ static void Glue_DoProbes(void)
         GluePad_LogRaw("GluePad F2 lua L=NULL\r\n");
         return;
     }
+    /* Definicoes primeiro (idempotente): T3m chama GluePad_Dump(). */
+    rc = Glue_RunChunk(L, GLUEPAD_LUA_NAV, 0);
     /* T1m: numero via mailbox (prova layout number). */
     rc = Glue_RunChunk(L, "GluePad_Mbox = 7", 0);
     Glue_PushGlobal(L, "GluePad_Mbox");
@@ -213,7 +216,7 @@ static void Glue_DoProbes(void)
     Glue_LogT2(L, rc);
 #if GLUEPAD_DUMP_ON
     /* T3m: inventario via mailbox (prova ponta a ponta). */
-    rc = Glue_RunChunk(L, GLUEPAD_LUA_DUMP, 0);
+    rc = Glue_RunChunk(L, "GluePad_Mbox = GluePad_Dump()", 0);
     Glue_PushGlobal(L, "GluePad_Mbox");
     Glue_LogDump(L, rc);
 #endif
@@ -229,7 +232,69 @@ LRESULT CALLBACK Glue_WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 #endif
         return 0;
     }
+    if (msg == GLUEPAD_WM_ACT)
+    {
+        Glue_ActIntent((int)wp);
+        return 0;
+    }
     return CallWindowProcA(s_old, hwnd, msg, wp, lp);
+}
+
+HWND Glue_GetHwnd(void)
+{
+    return s_hwnd;
+}
+
+static int Glue_CallL(const char *tag, const char *chunk)
+{
+    GetContextFn getctx = (GetContextFn)GLUEPAD_ADDR_GETCONTEXT;
+    DWORD chk = 0;
+    GlueL L;
+    int rc;
+    char line[128];
+    if (!GluePad_ReadU32(GLUEPAD_ADDR_GETCONTEXT, &chk))
+        return -99;
+    L = getctx();
+    if (!L)
+        return -99;
+    rc = Glue_RunChunk(L, chunk, 0);
+    wsprintfA(line, "GluePad F2 nav %s rc=%d\r\n", tag, rc);
+    GluePad_LogRaw(line);
+    return rc;
+}
+
+static int s_bootDone = 0;
+
+void Glue_BootNav(void)
+{
+    if (s_bootDone)
+        return;
+    s_bootDone = 1;
+    Glue_CallL("defs", GLUEPAD_LUA_NAV);
+    Glue_CallL("boot", "if GluePad_Boot then GluePad_Boot() end");
+}
+
+void Glue_ActIntent(int intent)
+{
+    const char *chunk = NULL;
+    const char *tag = "?";
+    /* Bootstrap preguicoso: primeiro toque = jogo interativo = estado
+     * pronto (sinal melhor que timer). Torna o gate ARMED irrelevante
+     * para navegar; ARMED segue para o dump. */
+    if (!s_bootDone)
+        Glue_BootNav();
+    switch (intent)
+    {
+    case GLUEPAD_INT_UP: chunk = "if GluePad_Move then GluePad_Move(\"UP\") end"; tag = "UP"; break;
+    case GLUEPAD_INT_DOWN: chunk = "if GluePad_Move then GluePad_Move(\"DOWN\") end"; tag = "DOWN"; break;
+    case GLUEPAD_INT_LEFT: chunk = "if GluePad_Move then GluePad_Move(\"LEFT\") end"; tag = "LEFT"; break;
+    case GLUEPAD_INT_RIGHT: chunk = "if GluePad_Move then GluePad_Move(\"RIGHT\") end"; tag = "RIGHT"; break;
+    case GLUEPAD_INT_A: chunk = "if GluePad_Activate then GluePad_Activate() end"; tag = "A"; break;
+    case GLUEPAD_INT_B: chunk = "if GluePad_Back then GluePad_Back() end"; tag = "B"; break;
+    case GLUEPAD_INT_BOOT: Glue_BootNav(); return;
+    default: return;
+    }
+    Glue_CallL(tag, chunk);
 }
 
 void Glue_TriggerProbe(void)
@@ -272,8 +337,17 @@ void Glue_TriggerProbe(void)
     {
         DWORD t = GetTickCount();
         DWORD v = 0;
+        char rdy[96];
         if (s_t0 == 0)
             s_t0 = t;
+        GluePad_ReadU32(0xB41DA4UL, &v);
+        /* Instrumentacao: mostra o que o gate ve ate ARMAR (some depois). */
+        if (!s_armedLogged)
+        {
+            wsprintfA(rdy, "GluePad F2 rdy age=%u mark=%u\r\n",
+                      (unsigned)(t - s_t0), (unsigned)v);
+            GluePad_LogRaw(rdy);
+        }
         if (t - s_t0 < 20000)
             return;
         if (!GluePad_ReadU32(0xB41DA4UL, &v) || v != 3)
@@ -291,6 +365,8 @@ void Glue_TriggerProbe(void)
             GluePad_LogRaw("GluePad F2 probe ARMED\r\n");
         }
     }
+    /* BOOT antes de PROBE (ordem FIFO): definicoes+Boot precedem o dump. */
+    PostMessageA(s_hwnd, GLUEPAD_WM_ACT, GLUEPAD_INT_BOOT, 0);
     PostMessageA(s_hwnd, GLUEPAD_WM_PROBE, 0, 0);
 }
 

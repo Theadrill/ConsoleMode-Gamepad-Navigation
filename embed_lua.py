@@ -14,8 +14,8 @@ if "\0" in text:
 esc = text.replace("\\", "\\\\").replace('"', '\\"')
 lines = esc.split("\n")
 with open(dst, "w", newline="\n") as f:
-    f.write("/* Gerado por embed_lua.py — nao editar. */\n")
-    f.write("static const char GLUEPAD_LUA_DUMP[] =\n")
+    f.write("/* Gerado por embed_lua.py - nao editar. */\n")
+    f.write("static const char GLUEPAD_LUA_NAV[] =\n")
     for ln in lines:
         f.write('"%s\\n"\n' % ln)
     f.write(";\n")

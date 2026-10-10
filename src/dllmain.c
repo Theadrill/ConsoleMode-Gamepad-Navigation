@@ -15,9 +15,7 @@
 #include "glueapi.h"
 #include "glue.h"
 
-/* Carimbo proprio para o futuro F4 (hooks INJECTED liberam o que tem
- * este dwExtraInfo). Definido ja em F1 para nao mudar assinatura depois. */
-#define GLUEPAD_EXTRAINFO ((ULONG_PTR)0x47503132UL) /* "GP12" ASCII */
+/* GLUEPAD_EXTRAINFO mora em keycap.h (carimbo F4 compartilhado). */
 
 static HANDLE g_stopEvent = NULL;
 static HANDLE g_thread = NULL;
