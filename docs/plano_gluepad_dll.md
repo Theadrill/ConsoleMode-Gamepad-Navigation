@@ -280,7 +280,12 @@ Teste espelha o harness do OctoLogin (Wine + XInput virtual).
   codigo: modo ADDONS (ENTRADAS+RODAPE, B=Cancel). Limite: scroll.
   F7-scroll em codigo (missao do dono): borda da lista clica o scroll
   nativo (refs recapturadas por intent; fim de curso = espacial) +
-  rebuild forcado c/ historico preservado.
+  rebuild forcado c/ historico preservado. F7-loop (foc= provou
+  Ok->Close->ForceLoad->Ok 8x): coluna travada em lf~800; cromo
+  (Close/ForceLoad/DropDown) fora das zonas — fluxo = lista<->rodape,
+  DOWN no rodape faz wrap p/ o topo da lista. F7-cromo (dono pediu o X
+  de volta): zona CROMO alcancavel por seta + `skipwrap` generico (wrap
+  nunca larga no cromo; loop segue impossivel).
   F7-diag (prisao no rodape, a investigar): todo intent loga `foc=frame`.
   F7-apagao (pos-mortem): insert do bloco dialogo comeu o header do Boot
   (`GluePad_Boot`=nil, tudo no-op c/ rc=0) — REGRA: apos mover bloco,

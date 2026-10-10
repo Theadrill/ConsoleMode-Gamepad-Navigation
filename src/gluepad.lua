@@ -285,9 +285,10 @@ end
 -- F7-addons (pedido do dono: B sai da lista). ENTRADAS = checks
 -- EntryNEnabled (dono pediu: navegar SO pelos checkboxes; A alterna).
 -- Botoes de fileira SAEM (co-localizados = foco incerto). RODAPE =
--- Ok/Cancel/EnableAll/DisableAll/Close/ForceLoad/DropDown. Scroll e
--- ScriptMemory pulam fora. Limite: scroll nao alcancavel (19 visiveis).
-local AZORDER = { "ENTRADAS", "RODAPE" }
+-- Ok/Cancel/EnableAll/DisableAll. CROMO = Close/ForceLoad/DropDown:
+-- alcancavel por seta (UP do topo), mas o wrap pula (sem loop).
+-- Scroll e ScriptMemory pulam fora. Limite: scroll alem dos visiveis.
+local AZORDER = { "ENTRADAS", "RODAPE", "CROMO" }
 
 local function azone(t, nm)
   if t == "CheckButton" and string.find(nm, "^AddonListEntry%d+Enabled$") then
@@ -296,11 +297,13 @@ local function azone(t, nm)
   if string.find(nm, "AddonListOkButton") or
      string.find(nm, "AddonListCancelButton") or
      string.find(nm, "AddonListEnableAllButton") or
-     string.find(nm, "AddonListDisableAllButton") or
-     string.find(nm, "AddonListCloseButton") or
+     string.find(nm, "AddonListDisableAllButton") then
+    return "RODAPE"
+  end
+  if string.find(nm, "AddonListCloseButton") or
      string.find(nm, "AddonListForceLoad") or
      string.find(nm, "^AddonCharacterDropDown") then
-    return "RODAPE"
+    return "CROMO"
   end
   return nil
 end
@@ -492,6 +495,7 @@ function GluePad_Boot()
   g.ready = nil
   g.order = nil
   g.zones = nil
+  g.skipwrap = nil
   g.scrollUp = nil
   g.scrollDown = nil
   local items, n = collect()
@@ -562,8 +566,9 @@ function GluePad_Boot()
   elseif scr == "ADDONS" then
     g.mode = "addons"
     order = AZORDER
-    zones = { ENTRADAS = {}, RODAPE = {} }
-    zn = { ENTRADAS = 0, RODAPE = 0 }
+    zones = { ENTRADAS = {}, RODAPE = {}, CROMO = {} }
+    zn = { ENTRADAS = 0, RODAPE = 0, CROMO = 0 }
+    g.skipwrap = "CROMO"
     local i = 1
     while i <= n do
       local it = items[i]
@@ -667,11 +672,14 @@ local function spatial(g, dir)
   if bestscore ~= nil then
     return { zi = bestzi, ii = bestii }
   end
-  -- Wrap: extremo oposto (secundario minimo desempata).
+  -- Wrap: extremo oposto (secundario minimo desempata). Pula a zona
+  -- marcada (cromo: alcancavel por seta, mas o wrap nunca te larga nela).
   local wrap = nil
   local wsec = nil
   zi = 1
   while zi <= table.getn(g.order) do
+    local skipw = g.skipwrap ~= nil and g.order[zi] == g.skipwrap
+    if not skipw then
     local z = g.zones[g.order[zi]]
     local ii = 1
     while ii <= table.getn(z) do
@@ -709,6 +717,7 @@ local function spatial(g, dir)
         bestii = ii
       end
       ii = ii + 1
+    end
     end
     zi = zi + 1
   end
