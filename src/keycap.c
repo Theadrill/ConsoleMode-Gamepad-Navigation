@@ -9,6 +9,8 @@ static int s_aDown = 0;
 static int s_bDown = 0;
 static int s_yDown = 0;
 static int s_nohwndLogged = 0;
+/* F8-hold: bit por direcao (intent 0-3); down repetido nao re-posta. */
+static DWORD s_heldDirs = 0;
 
 static int KeyCap_IsMapped(DWORD vk)
 {
@@ -80,8 +82,26 @@ static LRESULT CALLBACK KeyCap_Proc(int nCode, WPARAM wParam, LPARAM lParam)
                     if (down && !s_yDown) { s_yDown = 1; post = 1; }
                     if (!down) s_yDown = 0;
                 }
-                else if (down && intent >= 0)
-                    post = 1; /* D-pad: todo down navega (repeat ok) */
+                else if (intent >= 0 && intent <= 3)
+                {
+                    /* F8-hold: borda posta 1x e arma o timer; o timer
+                     * repete ate soltar (repeat do SO/Steam ignorado). */
+                    DWORD bit = 1u << (DWORD)intent;
+                    if (down)
+                    {
+                        if (!(s_heldDirs & bit))
+                        {
+                            s_heldDirs |= bit;
+                            post = 1;
+                            Glue_RepeatStart(h, intent);
+                        }
+                    }
+                    else
+                    {
+                        s_heldDirs &= ~bit;
+                        Glue_RepeatStop();
+                    }
+                }
                 if (post)
                     PostMessageA(h, GLUEPAD_WM_ACT, (WPARAM)intent, 0);
                 return 1; /* engole: sem dupla funcao */
@@ -97,6 +117,15 @@ static LRESULT CALLBACK KeyCap_Proc(int nCode, WPARAM wParam, LPARAM lParam)
             if (k->vkCode == (DWORD)GLUEPAD_VK_A) s_aDown = 0;
             if (k->vkCode == (DWORD)GLUEPAD_VK_B) s_bDown = 0;
             if (k->vkCode == (DWORD)GLUEPAD_VK_Y) s_yDown = 0;
+            /* Solta do D-pad fora do glue tambem para o repeat. */
+            {
+                int ii = KeyCap_IntentForVk(k->vkCode);
+                if (ii >= 0 && ii <= 3)
+                {
+                    s_heldDirs &= ~(1u << (DWORD)ii);
+                    Glue_RepeatStop();
+                }
+            }
         }
     }
     return CallNextHookEx(g_hook, nCode, wParam, lParam);

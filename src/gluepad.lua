@@ -285,11 +285,10 @@ end
 -- F7-addons (pedido do dono: B sai da lista). ENTRADAS = checks
 -- EntryNEnabled (dono pediu: navegar SO pelos checkboxes; A alterna).
 -- Botoes de fileira SAEM (co-localizados = foco incerto). RODAPE =
--- Ok/Cancel/EnableAll/DisableAll. CROMO = Close/ForceLoad/DropDown:
--- alcancavel por seta (UP do topo), mas o wrap pula (sem loop).
+-- Ok/Cancel/EnableAll/DisableAll. CROMO = Close/ForceLoad/DropDown
+-- (alcancavel por seta; sem wrap p/ ninguem, F8).
 -- Scroll e ScriptMemory pulam fora. Limite: scroll alem dos visiveis.
 local AZORDER = { "ENTRADAS", "RODAPE", "CROMO" }
-
 local function azone(t, nm)
   if t == "CheckButton" and string.find(nm, "^AddonListEntry%d+Enabled$") then
     return "ENTRADAS"
@@ -304,6 +303,19 @@ local function azone(t, nm)
      string.find(nm, "AddonListForceLoad") or
      string.find(nm, "^AddonCharacterDropDown") then
     return "CROMO"
+  end
+  return nil
+end
+-- F10-wizard (tela de sugestao de realm, foto via Y: 5 checks + Cancel,
+-- sem Okay - avanca sozinho ao escolher). B = Cancel.
+local WZORDER = { "OPCOES", "SAIDA" }
+
+local function wzone(nm)
+  if string.find(nm, "^RealmWizard") and not string.find(nm, "Cancel") then
+    return "OPCOES"
+  end
+  if string.find(nm, "RealmWizardCancel") then
+    return "SAIDA"
   end
   return nil
 end
@@ -323,6 +335,54 @@ local function findscroll(g, items, n)
     end
     i = i + 1
   end
+end
+
+-- F9b: rola EXATAMENTE 1 fileira pela barra (SetValue + altura medida).
+-- :Click() nativo pula ~11 (provado nos prints). Retorna true se rolou.
+local function scrollStep(g, dir)
+  local bar = g.scrollBar
+  local h = g.rowH
+  if bar == nil or type(h) ~= "number" or h <= 0 then
+    return false
+  end
+  local gf = bar.GetValue
+  if type(gf) ~= "function" then
+    return false
+  end
+  local ok, cur = pcall(gf, bar)
+  if not ok or type(cur) ~= "number" then
+    return false
+  end
+  local gm = bar.GetMinMaxValues
+  if type(gm) ~= "function" then
+    return false
+  end
+  local ok2, mn, mx = pcall(gm, bar)
+  if not ok2 or type(mn) ~= "number" or type(mx) ~= "number" then
+    return false
+  end
+  local new = cur + h
+  if dir == "UP" then
+    new = cur - h
+  end
+  if new < mn then
+    new = mn
+  end
+  if new > mx then
+    new = mx
+  end
+  if new == cur then
+    return false
+  end
+  local gs = bar.SetValue
+  if type(gs) ~= "function" then
+    return false
+  end
+  local ok3 = pcall(gs, bar, new)
+  if not ok3 then
+    return false
+  end
+  return true
 end
 local function czone(nm)
   if string.find(nm, "^CharSelectCharacterButton") then
@@ -495,9 +555,10 @@ function GluePad_Boot()
   g.ready = nil
   g.order = nil
   g.zones = nil
-  g.skipwrap = nil
   g.scrollUp = nil
   g.scrollDown = nil
+  g.scrollBar = nil
+  g.rowH = nil
   local items, n = collect()
   local zones = nil
   local zn = nil
@@ -547,6 +608,21 @@ function GluePad_Boot()
       end
       i = i + 1
     end
+  elseif scr == "OTHER|RealmWizard" then
+    g.mode = "wizard"
+    order = WZORDER
+    zones = { OPCOES = {}, SAIDA = {} }
+    zn = { OPCOES = 0, SAIDA = 0 }
+    local i = 1
+    while i <= n do
+      local it = items[i]
+      local z = wzone(it.nm)
+      if z ~= nil and zones[z] ~= nil then
+        zn[z] = zn[z] + 1
+        zones[z][zn[z]] = it
+      end
+      i = i + 1
+    end
   elseif scr == "CREATE" then
     g.mode = "create"
     order = KZORDER
@@ -568,7 +644,6 @@ function GluePad_Boot()
     order = AZORDER
     zones = { ENTRADAS = {}, RODAPE = {}, CROMO = {} }
     zn = { ENTRADAS = 0, RODAPE = 0, CROMO = 0 }
-    g.skipwrap = "CROMO"
     local i = 1
     while i <= n do
       local it = items[i]
@@ -597,12 +672,35 @@ function GluePad_Boot()
   g.ii = 1
   g.hist = {}
   g.ready = true
+  -- Botoes primeiro (a barra resolve a partir deles).
+  findscroll(g, items, n)
+  -- F9b: resolve barra (pai do botao) + altura da fileira (pos-sort).
+  if g.mode == "addons" then
+    local ez = g.zones["ENTRADAS"]
+    if ez ~= nil and table.getn(ez) >= 2 then
+      local h = ez[1].tp - ez[2].tp
+      if h > 0 then
+        g.rowH = h
+      end
+    end
+    local sb = g.scrollDown
+    if sb == nil then
+      sb = g.scrollUp
+    end
+    g.scrollBar = nil
+    if sb ~= nil then
+      local par = call1(sb, "GetParent")
+      if (type(par) == "table" or type(par) == "userdata") and
+         type(par.SetValue) == "function" and
+         type(par.GetValue) == "function" then
+        g.scrollBar = par
+      end
+    end
+  end
   -- F4b: dialogo por cima (se nasceu junto da tela); senao, foco da tela.
   if not setdlg(g, finddlg(items, n)) then
     show(cur())
   end
-  -- F7-scroll: captura botoes de scroll no rebuild tambem.
-  findscroll(g, items, n)
 end
 
 -- F7-scroll: releitura forcada (pos-scroll: o conjunto visivel mudou).
@@ -620,9 +718,10 @@ end
 
 -- F6c: LEFT/RIGHT espacial (pedido do dono: ir p/ o lado certo, nao
 -- ciclar a esmo). F6d: UP/DOWN tambem (fim da prisao de zona: do painel
--- Autologin, DOWN desce p/ os links). Vizinho real na direcao: eixo
--- principal + 2x o desvio no outro eixo. Sem vizinho = wrap p/ o extremo
--- oposto (ciclico honesto). Vale p/ toda tela (lf/tp, zero codigo/tela).
+-- Autologin, DOWN desce p/ os links). Vizinho real na direcao. F8 (dono):
+-- SEM wrap - no fim, fica parado (vale p/ toda tela). F9: vertical pesa
+-- o eixo 4x (fileira mais proxima ganha do alinhado longe: ForceLoad
+-- caia no Okay a 422 abaixo em vez da lista a 30). B/hist preservados.
 local function spatial(g, dir)
   local c = cur()
   if c == nil then
@@ -658,7 +757,11 @@ local function spatial(g, dir)
         if sec < 0 then
           sec = -sec
         end
+        -- F9: vertical pesa o eixo 4x; horizontal segue 2x (validado).
         local score = prim + 2 * sec
+        if dir == "UP" or dir == "DOWN" then
+          score = prim * 4 + sec
+        end
         if bestscore == nil or score < bestscore then
           bestscore = score
           bestzi = zi
@@ -672,59 +775,8 @@ local function spatial(g, dir)
   if bestscore ~= nil then
     return { zi = bestzi, ii = bestii }
   end
-  -- Wrap: extremo oposto (secundario minimo desempata). Pula a zona
-  -- marcada (cromo: alcancavel por seta, mas o wrap nunca te larga nela).
-  local wrap = nil
-  local wsec = nil
-  zi = 1
-  while zi <= table.getn(g.order) do
-    local skipw = g.skipwrap ~= nil and g.order[zi] == g.skipwrap
-    if not skipw then
-    local z = g.zones[g.order[zi]]
-    local ii = 1
-    while ii <= table.getn(z) do
-      local it = z[ii]
-      local p = nil
-      local s = nil
-      if dir == "RIGHT" then
-        p = -it.lf
-        s = it.tp - c.tp
-      elseif dir == "LEFT" then
-        p = it.lf
-        s = it.tp - c.tp
-      elseif dir == "DOWN" then
-        p = it.tp
-        s = it.lf - c.lf
-      else
-        p = -it.tp
-        s = it.lf - c.lf
-      end
-      if s < 0 then
-        s = -s
-      end
-      local take = false
-      if wrap == nil then
-        take = true
-      elseif p > wrap then
-        take = true
-      elseif p == wrap and s < wsec then
-        take = true
-      end
-      if take then
-        wrap = p
-        wsec = s
-        bestzi = zi
-        bestii = ii
-      end
-      ii = ii + 1
-    end
-    end
-    zi = zi + 1
-  end
-  if wrap == nil then
-    return nil
-  end
-  return { zi = bestzi, ii = bestii }
+  -- F8: sem vizinho na direcao = fica parado (sem wrap em toda tela).
+  return nil
 end
 
 function GluePad_Move(dir)
@@ -737,6 +789,7 @@ function GluePad_Move(dir)
     return
   end
   -- F4b: dialogo no ar captura tudo (so UP/DOWN andam; resto ignora).
+  -- F8: sem wrap - nos extremos, fica parado.
   if g.dlg ~= nil then
     if dir == "UP" or dir == "DOWN" then
       hidedlg(g)
@@ -744,12 +797,12 @@ function GluePad_Move(dir)
       if dir == "UP" then
         g.dlgii = g.dlgii - 1
         if g.dlgii < 1 then
-          g.dlgii = m
+          g.dlgii = 1
         end
       else
         g.dlgii = g.dlgii + 1
         if g.dlgii > m then
-          g.dlgii = 1
+          g.dlgii = m
         end
       end
       showdlg(g)
@@ -762,6 +815,10 @@ function GluePad_Move(dir)
   end
   -- F7-scroll: na borda da lista de addons, rola 1 passo nativo em vez de
   -- cair no rodape; fim de curso (botao ausente/desabilitado) = espacial.
+  -- F9-sticky: o foco gruda no MESMO addon (sobe/desce 1pos na releitura),
+  -- ritmo rola-pisa (sem pular fileira, sem disparada no hold).
+  -- F9b: passo EXATO via barra (click nativo pula ~11, provado no print);
+  -- click legado so como fallback sem barra.
   if g.mode == "addons" and (dir == "UP" or dir == "DOWN") and
      g.order[g.zi] == "ENTRADAS" then
     local m = table.getn(z)
@@ -771,28 +828,45 @@ function GluePad_Move(dir)
       if dir == "UP" then
         btn = g.scrollUp
       end
-      if btn ~= nil and call1(btn, "IsEnabled") == 1 then
+      local okBtn = (btn ~= nil and call1(btn, "IsEnabled") == 1)
+      if okBtn or g.scrollBar ~= nil then
+        local keep = g.ii
         hide(cur())
-        if btn.Click then
-          btn:Click()
-        end
-        GluePad_Rebuild()
-        local oi = 1
-        while oi <= table.getn(g.order) do
-          if g.order[oi] == "ENTRADAS" then
-            g.zi = oi
+        local moved = scrollStep(g, dir)
+        if not moved and okBtn and g.scrollBar == nil then
+          if btn.Click then
+            btn:Click()
           end
-          oi = oi + 1
+          moved = true
         end
-        local nz = g.zones["ENTRADAS"]
-        if nz ~= nil and table.getn(nz) > 0 then
-          g.ii = table.getn(nz)
-          if dir == "UP" then
-            g.ii = 1
+        if moved then
+          GluePad_Rebuild()
+          local oi = 1
+          while oi <= table.getn(g.order) do
+            if g.order[oi] == "ENTRADAS" then
+              g.zi = oi
+            end
+            oi = oi + 1
           end
-          show(cur())
+          local nz = g.zones["ENTRADAS"]
+          if nz ~= nil and table.getn(nz) > 0 then
+            local nm = table.getn(nz)
+            if dir == "DOWN" then
+              g.ii = keep - 1
+              if g.ii < 1 then
+                g.ii = 1
+              end
+            else
+              g.ii = keep + 1
+            end
+            if g.ii > nm then
+              g.ii = nm
+            end
+            show(cur())
+          end
+          return
         end
-        return
+        show(cur())
       end
     end
   end
@@ -831,6 +905,28 @@ function GluePad_Back()
       if f.Click then
         f:Click()
       end
+    end
+    return
+  end
+  -- F10-wizard: B = Cancel (sai da sugestao).
+  if g.mode == "wizard" then
+    local oi = 1
+    while oi <= table.getn(g.order) do
+      local wz = g.zones[g.order[oi]]
+      if wz ~= nil then
+        local i = 1
+        while i <= table.getn(wz) do
+          if string.find(wz[i].nm, "Cancel") then
+            local f = wz[i].ref
+            if f.Click then
+              f:Click()
+            end
+            return
+          end
+          i = i + 1
+        end
+      end
+      oi = oi + 1
     end
     return
   end

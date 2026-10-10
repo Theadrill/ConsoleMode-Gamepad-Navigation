@@ -223,6 +223,31 @@ static void Glue_DoProbes(void)
 }
 #endif /* GLUEPAD_LUA_PROBES */
 
+/* F8-hold: estado do repeat (hook escreve, timer/main le; ints). */
+static int s_repeatOn = 0;
+static int s_repeatIntent = -1;
+static HWND s_repeatHwnd = NULL;
+
+void Glue_RepeatStart(HWND hwnd, int intent)
+{
+    Glue_RepeatStop();
+    if (hwnd == NULL || intent < 0 || intent > 3)
+        return;
+    s_repeatOn = 1;
+    s_repeatIntent = intent;
+    s_repeatHwnd = hwnd;
+    SetTimer(hwnd, GLUEPAD_TIMER_REPEAT, GLUEPAD_HOLD_DELAY_MS, NULL);
+}
+
+void Glue_RepeatStop(void)
+{
+    if (s_repeatHwnd != NULL)
+        KillTimer(s_repeatHwnd, GLUEPAD_TIMER_REPEAT);
+    s_repeatOn = 0;
+    s_repeatIntent = -1;
+    s_repeatHwnd = NULL;
+}
+
 LRESULT CALLBACK Glue_WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 {
     if (msg == GLUEPAD_WM_PROBE)
@@ -235,6 +260,19 @@ LRESULT CALLBACK Glue_WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
     if (msg == GLUEPAD_WM_ACT)
     {
         Glue_ActIntent((int)wp);
+        return 0;
+    }
+    /* F8-hold: o timer repete o intent segurado (so em glue; no mundo,
+     * ou sem hold, ele se desliga sozinho). */
+    if (msg == WM_TIMER && wp == GLUEPAD_TIMER_REPEAT)
+    {
+        if (s_repeatOn && GluePad_IsOnGlue())
+        {
+            PostMessageA(hwnd, GLUEPAD_WM_ACT, (WPARAM)s_repeatIntent, 0);
+            SetTimer(hwnd, GLUEPAD_TIMER_REPEAT, GLUEPAD_HOLD_RATE_MS, NULL);
+        }
+        else
+            Glue_RepeatStop();
         return 0;
     }
     return CallWindowProcA(s_old, hwnd, msg, wp, lp);
@@ -475,6 +513,7 @@ void Glue_TriggerProbe(void)
 
 void Glue_Uninstall(void)
 {
+    Glue_RepeatStop();
     if (s_hwnd && s_old)
         SetWindowLongA(s_hwnd, GWL_WNDPROC, (LONG)s_old);
     s_hwnd = NULL;

@@ -11,6 +11,14 @@
 #define GLUEPAD_CLASSNAME "GxWindowClassD3d"
 #define GLUEPAD_CLASSNAME_FALLBACK "GxWindowClass"
 
+/* F8-hold: D-pad segurado repete (timer mora na janela = main thread).
+ * Hook posta 1x na borda; o timer dita a cadencia ate soltar. */
+#define GLUEPAD_TIMER_REPEAT 0x4744u
+#define GLUEPAD_HOLD_DELAY_MS 350
+#define GLUEPAD_HOLD_RATE_MS 110
+void Glue_RepeatStart(HWND hwnd, int intent);
+void Glue_RepeatStop(void);
+
 /* Chamado ~1x/2seg pela thread de poll (qualquer thread). Localiza a
  * janela, instala o subclass uma vez e posta a mensagem de sonda. */
 void Glue_TriggerProbe(void);

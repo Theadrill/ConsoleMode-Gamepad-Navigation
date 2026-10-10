@@ -271,9 +271,9 @@ Teste espelha o harness do OctoLogin (Wine + XInput virtual).
   absoluto) na criacao (ESQUERDA/MEIO/DIREITA) e no corte do login
   (rel>0.62); LEFT/RIGHT espacial p/ toda tela (vizinho real: dX + 2*dY,
   sem vizinho = parado); B da criacao varre zonas. F6d (prisao de zona
-  no Autologin): UP/DOWN tambem espacial (eixo principal + 2x desvio,
-   wrap p/ extremo oposto); B guarda zona so ao trocar.
-- **F7 — Addons (EM ANDAMENTO, pedido do dono):** PROVADO via Y: N=65
+  no Autologin): UP/DOWN tambem espacial (eixo principal + 2x desvio;
+  sem wrap desde a F8); B guarda zona so ao trocar.
+- **F7 — Addons (validado; scroll+cromo):** PROVADO via Y: N=65
   (`AddonListEntry1..19`+Enabled, Ok/Cancel/EnableAll/DisableAll/Close,
   ForceLoad, DropDown; Scroll/ScriptMemory fora). Armadilha irma da
   criacao: ScriptMemory EditBox jogava p/ LOGIN (zonas mortas). F7 em
@@ -290,6 +290,17 @@ Teste espelha o harness do OctoLogin (Wine + XInput virtual).
   F7-apagao (pos-mortem): insert do bloco dialogo comeu o header do Boot
   (`GluePad_Boot`=nil, tudo no-op c/ rc=0) — REGRA: apos mover bloco,
   grepar inventario de funcoes (duplicada/ausente) antes do build.
+- **F8 — Hold + sem-wrap (EM ANDAMENTO, pedido do dono):** D-pad
+  segurado repete (borda posta 1x + timer 350/110ms na janela, main
+  thread; soltar para; A/B/Y sem repeat; fora do glue o timer se mata).
+  Wrap removido em toda tela + dialogo (clamp): no fim, fica parado.
+- **F9 — Eixo vertical + sticky (EM ANDAMENTO):** espacial vertical pesa
+  o eixo 4x (fileira proxima ganha do alinhado longe: ForceLoad->lista,
+  nao Okay); scroll gruda no mesmo addon (pos+-1 na releitura). F9b
+  (print: click pula ~11 fileiras): passo EXATO via SetValue na barra
+  (pai do botao, altura medida; click legado = fallback).
+- **F10 — Wizard de realm (PENDING VALIDACAO):** `OTHER|RealmWizard`,
+  5 checks + Cancel (sem Okay). Modo OPCOES+SAIDA, B=Cancel, A escolhe.
 
 ## 8. Riscos e limitações aceitas
 
