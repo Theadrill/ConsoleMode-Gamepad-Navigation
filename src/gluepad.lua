@@ -147,6 +147,16 @@ function GluePad_Screen()
   -- Profundo: algum EditBox visivel em qualquer nivel? (so o login tem).
   local items, n = collect()
   local i = 1
+  -- F6b: criacao primeiro (tem EditBox de nome, mas e tela propria).
+  -- Ancorado ^ : CharSelectCreateCharacterButton (char-select) nao casa.
+  while i <= n do
+    local nm = items[i].nm
+    if string.find(nm, "^CharacterCreate") or string.find(nm, "^CharCreate") then
+      return "CREATE"
+    end
+    i = i + 1
+  end
+  i = 1
   while i <= n do
     if items[i].t == "EditBox" then
       return "LOGIN"
@@ -186,7 +196,46 @@ local ZORDER = { "CENTRO", "CONTAS", "LINKS", "SISTEMA" }
 -- CharSelectCharacterButton1..9; ACOES = EnterWorld/Create/ChangeRealm/
 -- Delete/Back/Addons/SaveCharacter. Rotate pula fora (spinner de modelo).
 local CZORDER = { "PERSONAGENS", "ACOES" }
+-- F5b: zonas do realm (empirico, dump F5a). Fileiras RealmListRealmButton*
+-- (3 visiveis; texto do realm nunca lido); OKCANCEL = Ok/Cancel/Close.
+-- Sort-headers pulam fora (ordenacao, fora do fluxo).
+local RZORDER = { "REALMS", "OKCANCEL" }
 
+local function rzone(nm)
+  if string.find(nm, "^RealmListRealmButton") then
+    return "REALMS"
+  end
+  if string.find(nm, "RealmListOkButton") or
+     string.find(nm, "RealmListCancelButton") or
+     string.find(nm, "RealmListCloseButton") then
+    return "OKCANCEL"
+  end
+  return nil
+end
+-- F6b: zonas da criacao (empirico, dump F6a). RACA 1..10, CLASSE 1..6,
+-- GENERO, CUSTOM (setas 1..5 + Randomize), NOME (edit + dado), CONFIRMA
+-- (Okay cria de verdade; Back cancela). Scroll/Rotate/faction pulam fora.
+-- F6b-fix (UX): a tela e UM fluxo vertical (raca->genero->classe->custom
+-- ->nome->okay); quebrar por categoria obrigava LEFT/RIGHT e invertia a
+-- ordem visual. Uma zona CRIACAO ordenada por altura desce naturalmente.
+local KZORDER = { "CRIACAO" }
+
+local function kzone(t, nm)
+  if string.find(nm, "^CharacterCreateRaceButton") or
+     string.find(nm, "^CharacterCreateClassButton") or
+     string.find(nm, "^CharacterCreateGenderButton") or
+     string.find(nm, "^CharacterCustomizationButtonFrame") or
+     string.find(nm, "RandomizeButton") or
+     string.find(nm, "RandomName") or
+     string.find(nm, "OkayButton") or
+     string.find(nm, "BackButton") then
+    return "CRIACAO"
+  end
+  if t == "EditBox" then
+    return "CRIACAO"
+  end
+  return nil
+end
 local function czone(nm)
   if string.find(nm, "^CharSelectCharacterButton") then
     return "PERSONAGENS"
@@ -373,6 +422,36 @@ function GluePad_Boot()
       end
       i = i + 1
     end
+  elseif scr == "OTHER|RealmList" then
+    g.mode = "realm"
+    order = RZORDER
+    zones = { REALMS = {}, OKCANCEL = {} }
+    zn = { REALMS = 0, OKCANCEL = 0 }
+    local i = 1
+    while i <= n do
+      local it = items[i]
+      local z = rzone(it.nm)
+      if z ~= nil and zones[z] ~= nil then
+        zn[z] = zn[z] + 1
+        zones[z][zn[z]] = it
+      end
+      i = i + 1
+    end
+  elseif scr == "CREATE" then
+    g.mode = "create"
+    order = KZORDER
+    zones = { CRIACAO = {} }
+    zn = { CRIACAO = 0 }
+    local i = 1
+    while i <= n do
+      local it = items[i]
+      local z = kzone(it.t, it.nm)
+      if z ~= nil and zones[z] ~= nil then
+        zn[z] = zn[z] + 1
+        zones[z][zn[z]] = it
+      end
+      i = i + 1
+    end
   else
     -- Tela desconhecida (realm/criacao/dialogo): descoberta, sem agir.
     return
@@ -487,6 +566,42 @@ function GluePad_Back()
       local f = it.ref
       if f.Click then
         f:Click()
+      end
+    end
+    return
+  end
+  -- F6b: B na criacao = Back (cancela, volta ao char-select).
+  if g.mode == "create" then
+    local kz = g.zones["CRIACAO"]
+    if kz ~= nil then
+      local i = 1
+      while i <= table.getn(kz) do
+        if string.find(kz[i].nm, "Back") then
+          local f = kz[i].ref
+          if f.Click then
+            f:Click()
+          end
+          return
+        end
+        i = i + 1
+      end
+    end
+    return
+  end
+  -- F5b: B no realm = Cancel (volta ao char-select).
+  if g.mode == "realm" then
+    local oz = g.zones["OKCANCEL"]
+    if oz ~= nil then
+      local i = 1
+      while i <= table.getn(oz) do
+        if string.find(oz[i].nm, "Cancel") then
+          local f = oz[i].ref
+          if f.Click then
+            f:Click()
+          end
+          return
+        end
+        i = i + 1
       end
     end
     return

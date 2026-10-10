@@ -5,7 +5,7 @@
 > 3. **AVISO DE SEGURANÇA DO WOW:** UI-level SEMPRE. Ler gamepad (XInput), filtrar input, chamar `:Click()` em botão de glue e `RunScript` no glue state — tudo permitido, mesma classe do Interact/ClassicAPI. NUNCA: unlocker Lua, automação de gameplay (cast/movimento/loot/combate), bot, patch de lógica do cliente, Warden-adjacent. `FrameScript_ExecuteBuffer` tem histórico de uso em bots — aqui ele serve SÓ para navegar em telas pré-jogo, nunca para jogar.
 > 4. **IDENTIDADE VISUAL:** foco mora no próprio elemento, em linguagem Vanilla nativa (`LockHighlight` azul, caret do editbox). Zero textura custom, zero cursor flutuante. Nada de visual Retail/moderno.
 > 5. **TOOLCHAINS (checagem imediata após ler este arquivo):** C → `C:\Tools\mingw32\bin\i686-w64-mingw32-gcc.exe --version` tem que responder `i686 ... 16.2.0` (receita de reinstall no README). Lua → `C:\Tools\lua50\luac50.exe -v` tem que responder `Lua 5.0.3` para validar `gluepad.lua` (NUNCA o 5.4 do PATH). Se algo faltar, seguir a receita do README; se não der, PERGUNTAR ao usuário antes de seguir.
-> 6. **O USUARIO NAO ESTA JOGANDO:** pode fechar o WoW (`taskkill /IM WoW.exe`) e recompilar/reinstalar quando necessario, sem pedir. O deploy exige jogo fechado (DLL travada em uso).
+> 6. **O USUARIO NAO ESTA JOGANDO:** pode fechar o WoW (`taskkill /IM WoW.exe`) e recompilar/reinstalar quando necessario, sem pedir. O deploy exige jogo fechado (DLL travada em uso). Se o kill der acesso negado (jogo elevado), compila mesmo assim e pede p/ o usuario fechar.
 
 # Contexto para IA — Mod GluePad (gamepad no glue 1.12.1)
 

@@ -250,14 +250,22 @@ Teste espelha o harness do OctoLogin (Wine + XInput virtual).
   teclado/mouse físicos intactos; mouse do Steam segue como fallback;
   in-game hooks saem (addon opera normal). Critério: mesma F2+F3 com
   Steam Input ligado, sem ação dupla, + 5 min in-game sem input fantasma.
-- **F5 — Realm (foco 100% custom):** realm não tem navegação nativa
-  (só Enter confirma), então lista `RealmListRealmButton1..18` vira zona
-  navegável (D-pad move, A seleciona/confirma via `:Click()`,
-  B volta/cancela). Critério: entrar, trocar e confirmar realm só no pad.
-- **F6 — Criação de char + homologação:** tela de criação (nome, raça,
-  classe, facção, botões) navegável no mesmo motor + boot→mundo repetido
-  5x, `screenState` nunca deixa a DLL falar no mundo, sem crash no
-  unload. Critério: 5/5 limpo.
+- **F5 — Realm (EM ANDAMENTO):** F5a-descoberta: Y na lista aberta p/
+  fotografar nomes (candidatos 1.12: `RealmListRealmButton1..18` + OK/
+  Cancel; Turtle pode diferir — vale o dump, nao a memoria). PROVADO F5a
+  in-game: `OTHER|RealmList`, 3 fileiras + Ok/Cancel/Close (nomes dos
+  realms nao vazam). F5b em codigo: zonas REALMS+OKCANCEL, B=Cancel.
+  PROVADO in-game: fileiras azuis, A seleciona/confirma, B cancela.
+- **F6 — Criação de char + homologação (EM ANDAMENTO):** F6a-descoberta:
+  Y na tela de criacao p/ fotografar nomes (hoje cai no modo LOGIN por
+  causa do EditBox de nome — funciona truncado). PROVADO F6a in-game:
+  N=39 (`CharacterCreateRaceButton1..10`, `ClassButton1..6`, Gender,
+  Customization 1..5, NameEdit, Okay/Back). F6b em codigo:   modo CREATE
+  (RACA+CLASSE+GENERO+CUSTOM+NOME+CONFIRMA, B=Back; Okay cria mesmo).
+  F6b-fix (UX, validado no print): criacao = 1 zona de fluxo (CRIACAO,
+  ordem por altura) — 6 zonas por categoria quebravam a ordem visual.
+  PROVADO in-game (fluxo unico). Proximo: 3 zonas por X (ESQUERDA <400,
+  MEIO 400-900, DIREITA >=900; Randomize = excecao nomeada p/ o MEIO).
 
 ## 8. Riscos e limitações aceitas
 
