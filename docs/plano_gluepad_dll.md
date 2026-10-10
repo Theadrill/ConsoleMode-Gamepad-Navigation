@@ -218,10 +218,20 @@ Teste espelha o harness do OctoLogin (Wine + XInput virtual).
   foco em editbox, digitação segue no teclado físico), B volta de zona e
   nunca quita. Critério: login completo só no pad (senha no teclado, 1x),
   sem mouse.
-- **F3 — Char-select (fecha o loop):** setas nativas nas linhas (com wrap
-  e scroll em 10+ chars) + zona `AÇÕES` além da última
-  (EnterWorld, Create, Delete, Back). A entra no mundo / ativa focado,
-  B volta ao login. Critério: boot→mundo só no pad, 3x seguidas.
+- **F3 — Char-select (EM ANDAMENTO):** F3a-descoberta: `GluePad_Screen()`
+  (LOGIN = EditBox visivel; senao OTHER|frame) + Boot so age no login
+  (Move/Back/Activate travados em `g.screen`, sem :Click stale) + dump
+  com prefixo SCR + log `nav scr`. PROVADO F3a in-game: `OTHER|
+  CharacterSelect`, N=18 (fileiras `CharSelectCharacterButton1..9` +
+  EnterWorld/Create/ChangeRealm/Delete/Back/Addons/RotateL-R/
+  SaveCharacter; zero nome pessoal). F3b em codigo: zonas
+  PERSONAGENS+ACOES, re-boot por tela a cada intent (sem stale),
+  B = Back no char, A no Delete abre dialogo (F4 depois). F3b-fix:
+  Screen() era raso (filhos diretos) e lia OTHER|AccountLogin no login
+  (edits aninhados) — agora varredura profunda via collect().
+  PROVADO in-game: login voltou + char-select perfeito (fileiras azuis,
+  ACOES, B=Back). Bonus: criacao cai no modo LOGIN (tem EditBox de nome)
+  — navega truncado; modo proprio + UX ficam p/ depois.
 - **F4 — Overlay + Steam bypass:** `GlueDialogButton1/2/3` como camada
   global (quando visível, D-pad navega, A confirma, B cancela) + hooks
   `WH_KEYBOARD_LL`/`WH_MOUSE_LL` que engolem só eventos injetados

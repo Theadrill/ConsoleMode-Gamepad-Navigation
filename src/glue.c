@@ -263,26 +263,62 @@ static int Glue_CallL(const char *tag, const char *chunk)
     return rc;
 }
 
+/* F3a: qual tela do glue? (GluePad_Screen; string curta, so nomes de
+ * frame estaticos — nenhum texto/dado do usuario.) */
+static void Glue_LogScr(GlueL L, int rc)
+{
+    unsigned char slot[16];
+    int tt = Glue_TopTT(L, slot);
+    if (rc == 0 && tt == GLUEPAD_TT_STRING)
+    {
+        DWORD ts = 0, len = 0;
+        char sbuf[64];
+        char line[128];
+        memcpy(&ts, slot + 8, 4);
+        if (GluePad_ReadU32(ts + 12, &len) && len < 60 &&
+            GluePad_ReadBytes(ts + 16, sbuf, len + 1))
+        {
+            sbuf[len] = '\0';
+            wsprintfA(line, "GluePad F2 nav scr %s\r\n", sbuf);
+            GluePad_LogRaw(line);
+            return;
+        }
+    }
+    GluePad_LogRaw("GluePad F2 nav scr FAIL\r\n");
+}
+
 static int s_bootDone = 0;
 
 void Glue_BootNav(void)
 {
-    if (s_bootDone)
-        return;
-    s_bootDone = 1;
-    Glue_CallL("defs", GLUEPAD_LUA_NAV);
+    GetContextFn getctx = (GetContextFn)GLUEPAD_ADDR_GETCONTEXT;
+    GlueL L;
+    int rc;
+    /* F3b: defs uma vez; boot-check a CADA intent (Lua decide: mesma
+     * tela = re-mostra, outra = reconstroi, desconhecida = desarma).
+     * Sem isso, A clicaria zona stale apos trocar login<->char. */
+    if (!s_bootDone)
+    {
+        s_bootDone = 1;
+        Glue_CallL("defs", GLUEPAD_LUA_NAV);
+    }
     Glue_CallL("boot", "if GluePad_Boot then GluePad_Boot() end");
+    /* F3a: registra a tela (LOGIN vs OTHER|frame) p/ descoberta. */
+    L = getctx();
+    if (!L)
+        return;
+    rc = Glue_RunChunk(L, "if GluePad_Screen then GluePad_Mbox = GluePad_Screen() end", 0);
+    Glue_PushGlobal(L, "GluePad_Mbox");
+    Glue_LogScr(L, rc);
 }
 
 void Glue_ActIntent(int intent)
 {
     const char *chunk = NULL;
     const char *tag = "?";
-    /* Bootstrap preguicoso: primeiro toque = jogo interativo = estado
-     * pronto (sinal melhor que timer). Torna o gate ARMED irrelevante
-     * para navegar; ARMED segue para o dump. */
-    if (!s_bootDone)
-        Glue_BootNav();
+    /* Bootstrap preguicoso + re-check por tela a cada toque (ver BootNav:
+     * barato e evita zona stale). ARMED segue so para o dump. */
+    Glue_BootNav();
     switch (intent)
     {
     case GLUEPAD_INT_UP: chunk = "if GluePad_Move then GluePad_Move(\"UP\") end"; tag = "UP"; break;
