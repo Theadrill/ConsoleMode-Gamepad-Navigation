@@ -304,6 +304,23 @@ local function azone(t, nm)
   end
   return nil
 end
+
+-- F7-scroll: acha os botoes de scroll nativos entre os coletados
+-- (refs guardadas; nada de nome fixo alem do padrao ScrollUp/Down).
+local function findscroll(g, items, n)
+  g.scrollUp = nil
+  g.scrollDown = nil
+  local i = 1
+  while i <= n do
+    local nm = items[i].nm
+    if string.find(nm, "ScrollUp") then
+      g.scrollUp = items[i].ref
+    elseif string.find(nm, "ScrollDown") then
+      g.scrollDown = items[i].ref
+    end
+    i = i + 1
+  end
+end
 local function czone(nm)
   if string.find(nm, "^CharSelectCharacterButton") then
     return "PERSONAGENS"
@@ -460,9 +477,11 @@ function GluePad_Boot()
   -- F3b: reconstroi ao trocar de tela (login <-> char); mesma tela = re-mostra.
   local scr = GluePad_Screen()
   if g.ready and g.screen == scr then
-    -- Mesma tela: so sincroniza a camada dialogo (abriu/fechou sozinha).
+    -- Mesma tela: so sincroniza a camada dialogo (abriu/fechou sozinha)
+    -- e recaptura o scroll (Up aparece ao sair do topo).
     local items, n = collect()
     setdlg(g, finddlg(items, n))
+    findscroll(g, items, n)
     if g.dlg == nil then
       show(cur())
     end
@@ -473,6 +492,8 @@ function GluePad_Boot()
   g.ready = nil
   g.order = nil
   g.zones = nil
+  g.scrollUp = nil
+  g.scrollDown = nil
   local items, n = collect()
   local zones = nil
   local zn = nil
@@ -574,6 +595,21 @@ function GluePad_Boot()
   -- F4b: dialogo por cima (se nasceu junto da tela); senao, foco da tela.
   if not setdlg(g, finddlg(items, n)) then
     show(cur())
+  end
+  -- F7-scroll: captura botoes de scroll no rebuild tambem.
+  findscroll(g, items, n)
+end
+
+-- F7-scroll: releitura forcada (pos-scroll: o conjunto visivel mudou).
+-- Preserva o historico se a tela continua a mesma.
+function GluePad_Rebuild()
+  local g = GluePad
+  local s = g.screen
+  local h = g.hist
+  g.ready = nil
+  GluePad_Boot()
+  if g.screen == s and h ~= nil then
+    g.hist = h
   end
 end
 
@@ -714,6 +750,42 @@ function GluePad_Move(dir)
   local z = g.zones[g.order[g.zi]]
   if z == nil or table.getn(z) == 0 then
     return
+  end
+  -- F7-scroll: na borda da lista de addons, rola 1 passo nativo em vez de
+  -- cair no rodape; fim de curso (botao ausente/desabilitado) = espacial.
+  if g.mode == "addons" and (dir == "UP" or dir == "DOWN") and
+     g.order[g.zi] == "ENTRADAS" then
+    local m = table.getn(z)
+    local edge = (dir == "DOWN" and g.ii >= m) or (dir == "UP" and g.ii <= 1)
+    if edge and m > 0 then
+      local btn = g.scrollDown
+      if dir == "UP" then
+        btn = g.scrollUp
+      end
+      if btn ~= nil and call1(btn, "IsEnabled") == 1 then
+        hide(cur())
+        if btn.Click then
+          btn:Click()
+        end
+        GluePad_Rebuild()
+        local oi = 1
+        while oi <= table.getn(g.order) do
+          if g.order[oi] == "ENTRADAS" then
+            g.zi = oi
+          end
+          oi = oi + 1
+        end
+        local nz = g.zones["ENTRADAS"]
+        if nz ~= nil and table.getn(nz) > 0 then
+          g.ii = table.getn(nz)
+          if dir == "UP" then
+            g.ii = 1
+          end
+          show(cur())
+        end
+        return
+      end
+    end
   end
   -- F6d: toda direcao e espacial (entre zonas inclusive); B guarda a zona.
   local tgt = spatial(g, dir)

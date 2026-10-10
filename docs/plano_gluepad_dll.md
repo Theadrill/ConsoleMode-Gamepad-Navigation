@@ -278,6 +278,9 @@ Teste espelha o harness do OctoLogin (Wine + XInput virtual).
   ForceLoad, DropDown; Scroll/ScriptMemory fora). Armadilha irma da
   criacao: ScriptMemory EditBox jogava p/ LOGIN (zonas mortas). F7 em
   codigo: modo ADDONS (ENTRADAS+RODAPE, B=Cancel). Limite: scroll.
+  F7-scroll em codigo (missao do dono): borda da lista clica o scroll
+  nativo (refs recapturadas por intent; fim de curso = espacial) +
+  rebuild forcado c/ historico preservado.
   F7-diag (prisao no rodape, a investigar): todo intent loga `foc=frame`.
   F7-apagao (pos-mortem): insert do bloco dialogo comeu o header do Boot
   (`GluePad_Boot`=nil, tudo no-op c/ rc=0) — REGRA: apos mover bloco,
