@@ -232,6 +232,8 @@ local function hide(it)
   end
 end
 
+-- (Camada dialogo F4b mora depois de cur(): usa hide/show/cur.)
+
 local function cur()
   local g = GluePad
   if g.zones == nil then
@@ -247,12 +249,89 @@ local function cur()
   return z[g.ii]
 end
 
+-- F4b: camada dialogo overlay. Botoes ^GlueDialogButton (provado: so o
+-- Button1 visivel por vez no conectando/senha; cabem 1..3). Enquanto o
+-- dialogo vive, ele captura D-pad/A/B; ao fechar, a tela retoma o foco.
+-- A = clica o focado; B = clica o ULTIMO (convencao Cancel/Nao).
+-- (Aqui depois de cur/show/hide: usa os 3 como upvalue, sem global nil.)
+local function finddlg(items, n)
+  local d = {}
+  local m = 0
+  local i = 1
+  while i <= n do
+    local it = items[i]
+    if it.t == "Button" and string.find(it.nm, "^GlueDialogButton") then
+      m = m + 1
+      d[m] = it
+    end
+    i = i + 1
+  end
+  if m == 0 then
+    return nil
+  end
+  if m > 1 then
+    table.sort(d, function(a, b) return a.tp > b.tp end)
+  end
+  return d
+end
+
+local function showdlg(g)
+  local d = g.dlg
+  if d == nil then
+    return
+  end
+  local it = d[g.dlgii]
+  if it ~= nil then
+    show(it)
+  end
+end
+
+local function hidedlg(g)
+  local d = g.dlg
+  if d == nil then
+    return
+  end
+  local it = d[g.dlgii]
+  if it ~= nil then
+    hide(it)
+  end
+end
+
+-- Sincroniza a camada dialogo; retorna true se o dialogo esta no ar.
+local function setdlg(g, dlg)
+  if dlg ~= nil then
+    if g.dlg == nil then
+      hide(cur())
+      g.dlg = dlg
+      g.dlgii = 1
+    else
+      hidedlg(g)
+      g.dlg = dlg
+      if g.dlgii > table.getn(dlg) then
+        g.dlgii = 1
+      end
+    end
+    showdlg(g)
+    return true
+  end
+  if g.dlg ~= nil then
+    g.dlg = nil
+    show(cur())
+  end
+  return false
+end
+
 function GluePad_Boot()
   local g = GluePad
   -- F3b: reconstroi ao trocar de tela (login <-> char); mesma tela = re-mostra.
   local scr = GluePad_Screen()
   if g.ready and g.screen == scr then
-    show(cur())
+    -- Mesma tela: so sincroniza a camada dialogo (abriu/fechou sozinha).
+    local items, n = collect()
+    setdlg(g, finddlg(items, n))
+    if g.dlg == nil then
+      show(cur())
+    end
     return
   end
   g.screen = scr
@@ -312,7 +391,10 @@ function GluePad_Boot()
   g.ii = 1
   g.hist = {}
   g.ready = true
-  show(cur())
+  -- F4b: dialogo por cima (se nasceu junto da tela); senao, foco da tela.
+  if not setdlg(g, finddlg(items, n)) then
+    show(cur())
+  end
 end
 
 function GluePad_Move(dir)
@@ -322,6 +404,26 @@ function GluePad_Move(dir)
   end
   -- Seguranca: sem modo (tela desconhecida/stale), nunca age.
   if g.mode == nil then
+    return
+  end
+  -- F4b: dialogo no ar captura tudo (so UP/DOWN andam; resto ignora).
+  if g.dlg ~= nil then
+    if dir == "UP" or dir == "DOWN" then
+      hidedlg(g)
+      local m = table.getn(g.dlg)
+      if dir == "UP" then
+        g.dlgii = g.dlgii - 1
+        if g.dlgii < 1 then
+          g.dlgii = m
+        end
+      else
+        g.dlgii = g.dlgii + 1
+        if g.dlgii > m then
+          g.dlgii = 1
+        end
+      end
+      showdlg(g)
+    end
     return
   end
   local z = g.zones[g.order[g.zi]]
@@ -377,6 +479,18 @@ function GluePad_Back()
   if g.mode == nil then
     return
   end
+  -- F4b: dialogo no ar = B clica o ULTIMO (convencao Cancel/Nao).
+  if g.dlg ~= nil then
+    local d = g.dlg
+    local it = d[table.getn(d)]
+    if it ~= nil then
+      local f = it.ref
+      if f.Click then
+        f:Click()
+      end
+    end
+    return
+  end
   -- F3b: B no char-select = voltar ao login (botao Back).
   if g.mode == "char" then
     local az = g.zones["ACOES"]
@@ -413,6 +527,17 @@ function GluePad_Activate()
   end
   -- Nunca :Click() sem modo (ex.: Login escondido no char-select).
   if g.mode == nil then
+    return
+  end
+  -- F4b: dialogo no ar = A clica o focado.
+  if g.dlg ~= nil then
+    local it = g.dlg[g.dlgii]
+    if it ~= nil then
+      local f = it.ref
+      if f.Click then
+        f:Click()
+      end
+    end
     return
   end
   local it = cur()

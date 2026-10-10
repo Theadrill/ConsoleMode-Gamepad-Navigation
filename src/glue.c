@@ -268,6 +268,7 @@ static int Glue_CallL(const char *tag, const char *chunk)
 static void Glue_LogScr(GlueL L, int rc)
 {
     unsigned char slot[16];
+    static char s_last[64] = "";
     int tt = Glue_TopTT(L, slot);
     if (rc == 0 && tt == GLUEPAD_TT_STRING)
     {
@@ -278,7 +279,21 @@ static void Glue_LogScr(GlueL L, int rc)
         if (GluePad_ReadU32(ts + 12, &len) && len < 60 &&
             GluePad_ReadBytes(ts + 16, sbuf, len + 1))
         {
+            unsigned i;
             sbuf[len] = '\0';
+            /* Boot roda a cada intent (F3b): so loga ao trocar de tela. */
+            for (i = 0; ; i++)
+            {
+                char a = i < 63 ? sbuf[i] : '\0';
+                char b = s_last[i];
+                if (a != b)
+                    break;
+                if (a == '\0')
+                    return;
+            }
+            for (i = 0; i < 63 && sbuf[i]; i++)
+                s_last[i] = sbuf[i];
+            s_last[i] = '\0';
             wsprintfA(line, "GluePad F2 nav scr %s\r\n", sbuf);
             GluePad_LogRaw(line);
             return;
@@ -327,6 +342,24 @@ void Glue_ActIntent(int intent)
     case GLUEPAD_INT_RIGHT: chunk = "if GluePad_Move then GluePad_Move(\"RIGHT\") end"; tag = "RIGHT"; break;
     case GLUEPAD_INT_A: chunk = "if GluePad_Activate then GluePad_Activate() end"; tag = "A"; break;
     case GLUEPAD_INT_B: chunk = "if GluePad_Back then GluePad_Back() end"; tag = "B"; break;
+    case GLUEPAD_INT_DUMP:
+    {
+        /* F4a: Y = fotografia a tela atual (dump sob demanda p/ descobrir
+         * dialogo/realm/criacao; so nomes de frame, sem texto/dado). */
+        GetContextFn getctx = (GetContextFn)GLUEPAD_ADDR_GETCONTEXT;
+        GlueL L = getctx();
+        int rc2;
+        if (!L)
+            return;
+        rc2 = Glue_RunChunk(L, "GluePad_Mbox = GluePad_Dump()", 0);
+        Glue_PushGlobal(L, "GluePad_Mbox");
+#if GLUEPAD_DUMP_ON
+        Glue_LogDump(L, rc2);
+#else
+        (void)rc2;
+#endif
+        return;
+    }
     case GLUEPAD_INT_BOOT: Glue_BootNav(); return;
     default: return;
     }

@@ -7,6 +7,7 @@
 static HHOOK g_hook = NULL;
 static int s_aDown = 0;
 static int s_bDown = 0;
+static int s_yDown = 0;
 static int s_nohwndLogged = 0;
 
 static int KeyCap_IsMapped(DWORD vk)
@@ -25,7 +26,8 @@ int KeyCap_IntentForVk(DWORD vk)
     if (vk == (DWORD)GLUEPAD_VK_RIGHT) return GLUEPAD_INT_RIGHT;
     if (vk == (DWORD)GLUEPAD_VK_A) return GLUEPAD_INT_A;
     if (vk == (DWORD)GLUEPAD_VK_B) return GLUEPAD_INT_B;
-    return -1; /* X/Y e resto: sem intent */
+    if (vk == (DWORD)GLUEPAD_VK_Y) return GLUEPAD_INT_DUMP;
+    return -1; /* X e resto: sem intent */
 }
 
 /* F2b-2: bypass de teclado em glue. Engole TODA injetada (o storm
@@ -73,6 +75,11 @@ static LRESULT CALLBACK KeyCap_Proc(int nCode, WPARAM wParam, LPARAM lParam)
                     if (down && !s_bDown) { s_bDown = 1; post = 1; }
                     if (!down) s_bDown = 0;
                 }
+                else if (k->vkCode == (DWORD)GLUEPAD_VK_Y)
+                {
+                    if (down && !s_yDown) { s_yDown = 1; post = 1; }
+                    if (!down) s_yDown = 0;
+                }
                 else if (down && intent >= 0)
                     post = 1; /* D-pad: todo down navega (repeat ok) */
                 if (post)
@@ -89,6 +96,7 @@ static LRESULT CALLBACK KeyCap_Proc(int nCode, WPARAM wParam, LPARAM lParam)
             /* Solta fora do glue reseta edge (sem fantasma ao voltar). */
             if (k->vkCode == (DWORD)GLUEPAD_VK_A) s_aDown = 0;
             if (k->vkCode == (DWORD)GLUEPAD_VK_B) s_bDown = 0;
+            if (k->vkCode == (DWORD)GLUEPAD_VK_Y) s_yDown = 0;
         }
     }
     return CallNextHookEx(g_hook, nCode, wParam, lParam);

@@ -197,7 +197,9 @@ Teste espelha o harness do OctoLogin (Wine + XInput virtual).
   PROVADO in-game: `run=0` x10 sem crash (ponte viva). `IsOnGlueScreen`
   e `GetLoginScreenState` NAO existem no glue (assert falhou). Chunk com
   erro abre dialog de script — asserts removidos (F2a-fix2, sondas
-  desligadas); navegacao usara chunks que nao erram. Gate = byte `isw`
+  desligadas);   navegacao usara chunks que nao erram. REGRA Lua: local ANTES do uso
+  (referencia futura vira global nil em runtime e abre dialog de script;
+  luac50 NAO pega — F4b quebrou assim com setdlg->cur). Gate = byte `isw`
   (falta valor no mundo).
   Licao de crash: primeira sonda em estado Lua semi-construido derrubou
   o jogo (ACCESS_VIOLATION em codigo Lua lendo NULL+0x28) — sonda agora
@@ -232,7 +234,16 @@ Teste espelha o harness do OctoLogin (Wine + XInput virtual).
   PROVADO in-game: login voltou + char-select perfeito (fileiras azuis,
   ACOES, B=Back). Bonus: criacao cai no modo LOGIN (tem EditBox de nome)
   — navega truncado; modo proprio + UX ficam p/ depois.
-- **F4 — Overlay + Steam bypass:** `GlueDialogButton1/2/3` como camada
+- **F4 — Overlay + Steam bypass (EM ANDAMENTO):** F4a-descoberta: Y vira
+  dump sob demanda (`GLUEPAD_INT_DUMP`, com edge) p/ fotografar dialogo/
+  realm/criacao (so nomes de frame). Gatilho: A no Login abre o modal
+  "conectando". PROVADO F4a in-game: `GlueDialogButton1` centralizado,
+  tela segue LOGIN; bonus: nomes reais do login p/ o passe de UX. F4b em
+  codigo: overlay (dialogo captura D-pad/A/B; A=focado, B=ultimo=Cancel;
+  ao fechar, a tela retoma), Boot sincroniza por intent, `nav scr` so ao
+  trocar. F4b-fix2: bloco dialogo depois de cur/show/hide (local apos uso
+  = global nil = dialog de script). PROVADO in-game: D-pad preso no botao,
+  B cancela, A clica, telas retomam.
   global (quando visível, D-pad navega, A confirma, B cancela) + hooks
   `WH_KEYBOARD_LL`/`WH_MOUSE_LL` que engolem só eventos injetados
   (`INJECTED`) enquanto em glue, liberando os carimbados da própria DLL;
