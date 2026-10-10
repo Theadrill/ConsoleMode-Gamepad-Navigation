@@ -6,7 +6,10 @@ In-game a DLL dorme: o addon ConsoleModeVanilla é dono do gamepad lá dentro.
 
 ## 0. Decisões fechadas (não reabrir sem motivo)
 
-- Escopo = login + char-select. Realm/diálogos: só se pedido depois.
+- Escopo por partes, nesta ordem: login pura → char-select (fecha loop
+  boot→mundo) → diálogos como overlay global → realm → criação de char.
+  Sem tradutor provisório: F1 é só infra, navegação já nasce no modelo
+  definitivo (descoberta runtime + foco + `:Click()`).
 - Sem hold-para-confirmar: tudo em 1 toque. Riscos assumidos: Quit sai
   direto; Delete pede digitar o nome (impossível pelo pad = trava natural).
 - Sem cursor customizado: o foco mora no próprio elemento, em linguagem
@@ -128,19 +131,53 @@ Build: MinGW-w64 i686 (`i686-w64-mingw32-gcc`, receita no `build.sh` do
 OctoLogin) + MinHook. Entrega: `mods/GluePad.dll` + 1 linha em `dlls.txt`.
 Teste espelha o harness do OctoLogin (Wine + XInput virtual).
 
-## 7. Fases testáveis
+## 7. Fases testáveis (ordem aprovada: login → char → overlay → realm → criação)
 
 - **F0 — Ponte (CONCLUÍDA):** ClassicAPI com `RunScript` confirmado via strings. Critério: nomes presentes. OK.
-- **F1 — Tradutor puro:** DLL só XInput→SendInput; login (Tab/Enter) e char (setas/Enter/Esc) 100% pelo pad. Critério: roteiro de 5 min refeito só no gamepad, mouse intocado.
-- **F2 — Foco visual:** bootstrap `GluePad`, descoberta runtime lista >= N navegáveis no login custom, primeiro foco no Account, `LockHighlight` acompanha D-pad. Critério: navegar tudo vendo o azul, sem mouse.
-- **F3 — Ativação:** A clica focado (`:Click()`), B troca de zona, Quit/Remove/Clear em 1 toque consciente. Critério: login completo + char→mundo só no pad (senha no teclado, 1 vez).
-- **F4 — Steam bypass:** com Steam Input ativo, sem ação dupla; teclado físico intacto; in-game hooks saem (addon opera normal). Critério: mesma F3 com Steam Input ligado + 5 min in-game sem input fantasma.
-- **F5 — Homologação:** boot→mundo repetido 5x, `screenState` nunca deixa a DLL falar no mundo, sem crash no unload. Critério: 5/5 limpo.
+- **F1 — Infra (sem navegação jogável):** esqueleto compila i686
+  (`Machine=0x014C`), carrega via `dlls.txt`, thread faz poll XInput
+  (D-pad, A, B; edge + repeat) e só registra/loga quando `screenState`
+  está na faixa glue; no mundo = silêncio total. `SendInput` (quando
+  existir) já sai carimbado com `dwExtraInfo` próprio. Nenhum mapeamento
+  provisório — nada para descartar na F2. Critério: PE `0x014C` + DLL
+  visível nos módulos com jogo no glue + log mostra inputs no glue e
+  nada no mundo.
+- **F2 — Login pura (foco + ativação, modelo definitivo):** bootstrap
+  `GluePad`, descoberta runtime (`GetChildren()` desde `GlueParent`,
+  só `Button`/`EditBox` visíveis+habilitados), primeiro foco no Account,
+  `LockHighlight`/caret acompanham D-pad por zonas
+  (`CENTRO` ⇄ `CONTAS` ⇄ `LINKS` ⇄ `SISTEMA`). A ativa (`:Click()` /
+  foco em editbox, digitação segue no teclado físico), B volta de zona e
+  nunca quita. Critério: login completo só no pad (senha no teclado, 1x),
+  sem mouse.
+- **F3 — Char-select (fecha o loop):** setas nativas nas linhas (com wrap
+  e scroll em 10+ chars) + zona `AÇÕES` além da última
+  (EnterWorld, Create, Delete, Back). A entra no mundo / ativa focado,
+  B volta ao login. Critério: boot→mundo só no pad, 3x seguidas.
+- **F4 — Overlay + Steam bypass:** `GlueDialogButton1/2/3` como camada
+  global (quando visível, D-pad navega, A confirma, B cancela) + hooks
+  `WH_KEYBOARD_LL`/`WH_MOUSE_LL` que engolem só eventos injetados
+  (`INJECTED`) enquanto em glue, liberando os carimbados da própria DLL;
+  teclado/mouse físicos intactos; mouse do Steam segue como fallback;
+  in-game hooks saem (addon opera normal). Critério: mesma F2+F3 com
+  Steam Input ligado, sem ação dupla, + 5 min in-game sem input fantasma.
+- **F5 — Realm (foco 100% custom):** realm não tem navegação nativa
+  (só Enter confirma), então lista `RealmListRealmButton1..18` vira zona
+  navegável (D-pad move, A seleciona/confirma via `:Click()`,
+  B volta/cancela). Critério: entrar, trocar e confirmar realm só no pad.
+- **F6 — Criação de char + homologação:** tela de criação (nome, raça,
+  classe, facção, botões) navegável no mesmo motor + boot→mundo repetido
+  5x, `screenState` nunca deixa a DLL falar no mundo, sem crash no
+  unload. Critério: 5/5 limpo.
 
 ## 8. Riscos e limitações aceitas
 
 - Gamepad não digita: usuário/senha, 1x no teclado por sessão (nome persiste; linha salva preenche).
 - Quit/Remove/Clear em 1 toque (sem hold) — decisão do dono.
-- Realm/diálogos fora do escopo: A confirma realm pré-selecionado; Enter em diálogo = Cancel. Incluir depois = mesma DLL + 2 mapeamentos.
+- Realm/diálogos/criação dentro do escopo, por fases (F4–F6): diálogo = overlay global (Enter em diálogo = Cancel no nativo, preservado como B); realm = A confirma pré-selecionado até F5 existir. Incluir depois = mesma DLL + mapeamentos.
 - EndScene sob DXVK a validar em F2; alternativa = hook de mensagem da janela.
-- Nomes do glue custom Turtle via descoberta (Gitea Octo bloqueado por DDoS-protection; não dependemos dele).
+ - Nomes do glue custom Turtle via descoberta (Gitea Octo bloqueado por DDoS-protection; não dependemos dele).
+- **Futuro (fora deste plano): teclado virtual pelo pad** (digitar
+  usuário/senha/nome sem teclado físico). Idéia registrada, não entra em
+  F1–F6; quando entrar, será fase própria com layout e confirmação
+  dedicados.
