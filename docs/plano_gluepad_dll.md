@@ -121,6 +121,8 @@ da hora). Solução 100% dentro da DLL, zero config do Steam:
 dllmain.c  carga, fila de intenções, hook EndScene (dreno na main thread)
 pad.c      poll XInput (D-pad, A, B; edge detection + repeat)
 screen.c   lê screenState @ 0xB41DA0; gating glue vs mundo
+keycap.c   captura das teclas virtuais Steam (WH_KEYBOARD_LL + INJECTED)
+glog.c     log duplo (OutputDebugString + %TEMP%\gluepad_f1.log)
 glue.c     GetContext + RunScript-via-pcall; bootstrap do helper GluePad
 maps.c     zonas, vizinhos e mapeamentos da seção 4
 gluepad.lua helper (foco, highlight, activate, descoberta de frames)
@@ -128,20 +130,73 @@ steamfilter.c hooks LL + INJECTED + dwExtraInfo (seção 5)
 ```
 
 Build: MinGW-w64 i686 (`i686-w64-mingw32-gcc`, receita no `build.sh` do
-OctoLogin) + MinHook. Entrega: `mods/GluePad.dll` + 1 linha em `dlls.txt`.
+OctoLogin) + MinHook. Deploy obrigatório após todo build: `build.bat`
+compila (PE `0x014C`) E auto-instala em
+`C:\Users\rodri\OneDrive\wow\octowow\mods\GluePad.dll`; depois checar que
+`dlls.txt` (LF puro) tem a linha `mods/GluePad.dll`. Sem junction
+(não existe p/ arquivo). Validação F1 via `%TEMP%\gluepad_f1.log`.
 Teste espelha o harness do OctoLogin (Wine + XInput virtual).
 
 ## 7. Fases testáveis (ordem aprovada: login → char → overlay → realm → criação)
 
-- **F0 — Ponte (CONCLUÍDA):** ClassicAPI com `RunScript` confirmado via strings. Critério: nomes presentes. OK.
+- **F0 — Ponte (CORRIGIDA em F1c):** ClassicAPI tem os nomes como strings, mas o export PE é SÓ `Load` (verificado por parse do PE). `IsOnGlueScreen` via `GetProcAddress` = `api MISSING` in-game. Ponte Lua segue válida SÓ via `getglobal("RunScript")` no glue state (a provar em F2).
 - **F1 — Infra (sem navegação jogável):** esqueleto compila i686
   (`Machine=0x014C`), carrega via `dlls.txt`, thread faz poll XInput
   (D-pad, A, B; edge + repeat) e só registra/loga quando `screenState`
   está na faixa glue; no mundo = silêncio total. `SendInput` (quando
   existir) já sai carimbado com `dwExtraInfo` próprio. Nenhum mapeamento
   provisório — nada para descartar na F2. Critério: PE `0x014C` + DLL
-  visível nos módulos com jogo no glue + log mostra inputs no glue e
-  nada no mundo.
+  visível nos módulos com jogo no glue + `%TEMP%\gluepad_f1.log` mostra
+  inputs no glue e nada no mundo.
+- **F1b — Fonte teclado Steam (só observa, não engole):** Deck no
+  Windows não expõe XInput (vira teclado via Steam Input), então a DLL
+  instala `WH_KEYBOARD_LL` com message pump e loga toda tecla INJECTED +
+  física mapeada (`7/8/9/0` = D-pad, `Espaço/3/1/2` = A/B/X/Y), só em
+  glue, sempre via `CallNextHookEx` (bypass/engolir vem depois).
+  Critério: D-pad e botões aparecem no log com `injected=1`.
+- **F1c — Autoridade do gating (só observa):** `screen=0x00` apareceu
+  dentro do mundo, então a faixa `<=0x0B` está sob suspeita. A DLL chama
+  `ClassicAPI!IsOnGlueScreen` via `GetProcAddress` (risco documentado em
+  `glueapi.c`) e loga `api=` lado a lado + snapshot dos vizinhos de
+  `0xB41DA0` + diag 1x/seg sem gating; tecla física não é mais logada.
+  Critério: par login/mundo anotado no log define o gating com dado.
+- **F2a — Ponte de leitura (só observa):** `0xB41DA0` arquivado como
+  gate (lê 0 no login, char-select E mundo). Subclass da janela
+  (`GxWindowClass`) + mensagem custom leva sondas Lua à main thread:
+  `getglobal("RunScript")+pushstring+pcall` com `assert(1)`,
+  `assert(IsOnGlueScreen)`, `assert(IsOnGlueScreen())`,
+  `assert(GetLoginScreenState)` — só código numérico, sem `tostring`.
+  Sem MinHook, sem navegação, sem engolir. Critério: `wnd hooked` +
+  `lua run=0 ...` no login e no mundo; `isgluecall` 0/1 resolve o gate.
+- **F2b-1 — Canal de valores + inventario (só observa):** gate agora é
+  o byte `isw` (0 glue / 1 mundo, provado). `RunScript` DESCARTA retornos
+  (`return 7` → nil no topo) — canal via **mailbox**: chunk grava global,
+  C lê com `getglobal` direto.   Layout TValue PROVADO in-game (t1+t2 crus): slot 16B, tt+0, valor+8
+  (double/ponteiro); TString len+12/dados+16. `gluepad.lua` (Lua 5.0, `luac50 -p`,
+  embutido no build) inventaria `Button/EditBox` (nome+tipo+vis+pos,
+  NUNCA texto de EditBox) gravando em `GluePad_Mbox` — 1x/boot, sem
+  asserts, sem dialogs. Critério: `t1 tt=3 num=7`, `t2 str=abcd`,
+  `dump N=...`.
+  RESULTADO in-game: `t1 num=7`, `t2 str=abcd` (canal provado), inventario
+  N=286 frames (nomes stock RealmList*/GlueDialog*/AddonList* confirmados,
+  posicoes GetTop/GetLeft ok). 1.12: `IsVisible` devolve 1 ou nil —
+  inventario v2 registra SO visivel (some o ruido escondido).
+  PROVADO in-game: `run=0` x10 sem crash (ponte viva). `IsOnGlueScreen`
+  e `GetLoginScreenState` NAO existem no glue (assert falhou). Chunk com
+  erro abre dialog de script — asserts removidos (F2a-fix2, sondas
+  desligadas); navegacao usara chunks que nao erram. Gate = byte `isw`
+  (falta valor no mundo).
+  Licao de crash: primeira sonda em estado Lua semi-construido derrubou
+  o jogo (ACCESS_VIOLATION em codigo Lua lendo NULL+0x28) — sonda agora
+  exige prontidao (20s de vida + `0xB41DA4==3`).
+  Causa raiz do 2o crash (prova por disassembly do WoW.exe): o Lua deste
+  cliente e thiscall/fastcall (L em ECX, `ret N`) — __cdecl lia ECX-lixo
+  como L e corrompia a stack. GetContext `0x7040D0` confirmado
+  (`mov eax,[0xCEEF74]; ret`). 3o crash: GLOBALSINDEX deste cliente e
+  -10001 (globals em L+0x40); o -10002 do stock cai em upvalue e le
+  ci->func NULL fora de chamada Lua (fault 0x07). Tudo provado no
+  disassembly do WoW.exe. Gate tem 2a fonte: byte IsInWorld do
+  Interact `*(char*)0xB4B424` (logado como `isw=`).
 - **F2 — Login pura (foco + ativação, modelo definitivo):** bootstrap
   `GluePad`, descoberta runtime (`GetChildren()` desde `GlueParent`,
   só `Button`/`EditBox` visíveis+habilitados), primeiro foco no Account,

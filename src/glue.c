@@ -1,0 +1,303 @@
+#include "glue.h"
+#include "glog.h"
+#include "screen.h"
+#include "glue_lua.h" /* GLUEPAD_LUA_DUMP (gerado no build, validado luac50) */
+
+/* Enderecos 5875 (plano, secao 3). Chamada direta: nossa DLL esta dentro
+ * do processo (sem ASLR no 1.12). Leitura guardada antes de chamar. */
+#define GLUEPAD_ADDR_GETCONTEXT ((unsigned long)0x7040D0UL)
+#define GLUEPAD_ADDR_PUSHSTRING ((unsigned long)0x6F3890UL)
+#define GLUEPAD_ADDR_GETTABLE   ((unsigned long)0x6F3A40UL)
+#define GLUEPAD_ADDR_PCALL      ((unsigned long)0x6F41A0UL)
+/* GLOBALSINDEX DESTE cliente = -10001 (0xFFFFD8EF): prova por disassembly —
+ * lua_gettable desvia -10000 (registry: L->l_G+0x30) e -10001 (globals:
+ * L+0x40, tabela DENTRO do lua_State). O -10002 do Lua stock cai no caminho
+ * de upvalue, que le ci->func — NULL fora de chamada Lua (nosso caso,
+ * WndProc) = crash lendo 0x07. Foi exatamente o 3o crash. */
+#define GLUEPAD_GLOBALSINDEX (-10001)
+
+typedef void *GlueL; /* lua_State* opaco */
+/* Zero args: convencao irrelevante na chamada. */
+typedef GlueL (*GetContextFn)(void);
+/* PROVA por disassembly do WoW.exe (F2a): o Lua deste cliente e
+ * thiscall/fastcall (L em ECX, 2o arg em EDX, `ret N` que limpa a stack).
+ * __cdecl aqui crasha duas vezes: a funcao le ECX-lixo como L (NULL+0x28,
+ * igual aos dois crashs) e a limpeza dupla de stack corrompe o ESP.
+ * Mesma convencao no Interact (LUA_CFUNCTION = __fastcall). */
+typedef void (__fastcall *LuaPushStringFn)(GlueL L, const char *s);
+typedef void (__fastcall *LuaGetTableFn)(GlueL L, int idx);
+typedef int (__fastcall *LuaPcallFn)(GlueL L, int nargs, int nresults, int errfunc);
+
+static HWND s_hwnd = NULL;
+static WNDPROC s_old = NULL;
+static int s_hookedLogged = 0;
+static int s_missingLogged = 0;
+static DWORD s_t0 = 0;
+static int s_waitLogged = 0;
+static int s_armedLogged = 0;
+
+/* F2b-1: canal de valores (leitura apenas, sem asserts, sem dialogs).
+ * Layout TValue derivado do disassembly: slot = 16 bytes; tt em +0
+ * (0=nil, 1=bool, 3=number, 4=string); numero (double) em +4;
+ * TString*: len em +12, dados em +16. Tudo lido guardado; T1/T2 fazem
+ * a prova empirica do layout antes do inventario. 1 = ligado. */
+#define GLUEPAD_LUA_PROBES 1
+
+#if GLUEPAD_LUA_PROBES
+#define GLUEPAD_TT_NIL 0
+#define GLUEPAD_TT_BOOL 1
+#define GLUEPAD_TT_NUMBER 3
+#define GLUEPAD_TT_STRING 4
+#define GLUEPAD_DUMP_CAP 3800
+
+static int Glue_RunChunk(GlueL L, const char *chunk, int nresults)
+{
+    LuaPushStringFn pushstring = (LuaPushStringFn)GLUEPAD_ADDR_PUSHSTRING;
+    LuaGetTableFn gettable = (LuaGetTableFn)GLUEPAD_ADDR_GETTABLE;
+    LuaPcallFn pcall = (LuaPcallFn)GLUEPAD_ADDR_PCALL;
+    /* getglobal(L,"RunScript") = pushstring + gettable(GLOBALSINDEX) */
+    pushstring(L, "RunScript");
+    gettable(L, GLUEPAD_GLOBALSINDEX);
+    pushstring(L, chunk);
+    /* Sucesso com nresults=0: stack balanceada. Com nresults=1: +1 slot
+     * por chunk (sem settop mapeado; 3 slots/boot aqui — irrelevante).
+     * Falha: +1 slot (errmsg). Chunks abaixo nao erram por desenho. */
+    return pcall(L, 1, nresults, 0);
+}
+
+/* Push de global (leitura direta, sem pcall): +1 slot por leitura
+ * (sem settop mapeado; poucas leituras/boot — irrelevante). */
+static void Glue_PushGlobal(GlueL L, const char *name)
+{
+    LuaPushStringFn pushstring = (LuaPushStringFn)GLUEPAD_ADDR_PUSHSTRING;
+    LuaGetTableFn gettable = (LuaGetTableFn)GLUEPAD_ADDR_GETTABLE;
+    pushstring(L, name);
+    gettable(L, GLUEPAD_GLOBALSINDEX);
+}
+
+/* Le o slot do topo (16 bytes guardados). Retorna tt ou -1. */
+static int Glue_TopTT(GlueL L, unsigned char slot[16])
+{
+    DWORD top = 0;
+    if (!GluePad_ReadU32((unsigned long)L + 8, &top))
+        return -1;
+    if (!GluePad_ReadBytes((unsigned long)(top - 16), slot, 16))
+        return -1;
+    return (int)(slot[0] | ((unsigned)slot[1] << 8) |
+                 ((unsigned)slot[2] << 16) | ((unsigned)slot[3] << 24));
+}
+
+static void Glue_LogT1(GlueL L, int rc)
+{
+    /* Layout PROVADO in-game (t1+t2 crus): slot 16B: tt+0,
+     * valor em +8 (double 8B / ponteiro 4B). +4 e ptr de estado, ignorar.
+     * t1m espera num=7. */
+    char line[128];
+    unsigned char slot[16];
+    int tt = Glue_TopTT(L, slot);
+    if (rc == 0 && tt == GLUEPAD_TT_NUMBER)
+    {
+        double v = 0.0;
+        memcpy(&v, slot + 8, 8);
+        wsprintfA(line, "GluePad F2 t1 rc=0 tt=3 num=%d\r\n", (int)v);
+    }
+    else
+        wsprintfA(line, "GluePad F2 t1 rc=%d tt=%d\r\n", rc, tt);
+    GluePad_LogRaw(line);
+}
+
+static void Glue_LogT2(GlueL L, int rc)
+{
+    /* TString PROVADA: len em ts+12, dados em ts+16. t2m espera abcd. */
+    char line[160];
+    unsigned char slot[16];
+    int tt = Glue_TopTT(L, slot);
+    if (rc == 0 && tt == GLUEPAD_TT_STRING)
+    {
+        DWORD ts = 0, len = 0;
+        char sbuf[16];
+        memcpy(&ts, slot + 8, 4);
+        if (GluePad_ReadU32(ts + 12, &len) && len < 15 &&
+            GluePad_ReadBytes(ts + 16, sbuf, len + 1))
+        {
+            sbuf[len] = '\0';
+            wsprintfA(line, "GluePad F2 t2 rc=0 tt=4 len=%u str=%s\r\n", len, sbuf);
+            GluePad_LogRaw(line);
+        }
+        else
+        {
+            wsprintfA(line, "GluePad F2 t2 rc=0 tt=4 BADLEN\r\n");
+            GluePad_LogRaw(line);
+        }
+    }
+    else
+    {
+        wsprintfA(line, "GluePad F2 t2 rc=%d tt=%d\r\n", rc, tt);
+        GluePad_LogRaw(line);
+    }
+}
+
+/* Dump religado com offsets provados (valor+8, len+12, dados+16). */
+#define GLUEPAD_DUMP_ON 1
+
+#if GLUEPAD_DUMP_ON
+static void Glue_LogDump(GlueL L, int rc)
+{
+    unsigned char slot[16];
+    int tt = Glue_TopTT(L, slot);
+    if (rc == 0 && tt == GLUEPAD_TT_STRING)
+    {
+        DWORD ts = 0, len = 0;
+        static char sbuf[GLUEPAD_DUMP_CAP + 16];
+        unsigned cap;
+        memcpy(&ts, slot + 8, 4);
+        if (GluePad_ReadU32(ts + 12, &len))
+        {
+            char line[256];
+            unsigned off = 0;
+            cap = len < GLUEPAD_DUMP_CAP ? len : GLUEPAD_DUMP_CAP;
+            if (cap > 0 && GluePad_ReadBytes(ts + 16, sbuf, cap))
+            {
+                sbuf[cap] = '\0';
+                wsprintfA(line, "GluePad F2 dump rc=0 len=%u\r\n", len);
+                GluePad_LogRaw(line);
+                while (off < cap)
+                {
+                    unsigned n = cap - off > 200 ? 200 : cap - off;
+                    memcpy(line, sbuf + off, n);
+                    line[n] = '\0';
+                    lstrcatA(line, "\r\n");
+                    GluePad_LogRaw(line);
+                    off += n;
+                }
+                return;
+            }
+        }
+    }
+    GluePad_LogRaw("GluePad F2 dump FAIL\r\n");
+}
+#endif /* GLUEPAD_DUMP_ON */
+
+static int s_valuesDone = 0;
+
+static void Glue_DoProbes(void)
+{
+    GetContextFn getctx = (GetContextFn)GLUEPAD_ADDR_GETCONTEXT;
+    DWORD chk = 0;
+    GlueL L;
+    int rc;
+
+    if (s_valuesDone)
+        return;
+    s_valuesDone = 1;
+
+    /* Fora do WoW (endereco ilegivel): nao chama nada. */
+    if (!GluePad_ReadU32(GLUEPAD_ADDR_GETCONTEXT, &chk))
+    {
+        GluePad_LogRaw("GluePad F2 lua noctx\r\n");
+        return;
+    }
+    L = getctx();
+    if (!L)
+    {
+        GluePad_LogRaw("GluePad F2 lua L=NULL\r\n");
+        return;
+    }
+    /* T1m: numero via mailbox (prova layout number). */
+    rc = Glue_RunChunk(L, "GluePad_Mbox = 7", 0);
+    Glue_PushGlobal(L, "GluePad_Mbox");
+    Glue_LogT1(L, rc);
+    /* T2m: string via mailbox (despejo cru p/ achar len/dados). */
+    rc = Glue_RunChunk(L, "GluePad_Mbox = \"abcd\"", 0);
+    Glue_PushGlobal(L, "GluePad_Mbox");
+    Glue_LogT2(L, rc);
+#if GLUEPAD_DUMP_ON
+    /* T3m: inventario via mailbox (prova ponta a ponta). */
+    rc = Glue_RunChunk(L, GLUEPAD_LUA_DUMP, 0);
+    Glue_PushGlobal(L, "GluePad_Mbox");
+    Glue_LogDump(L, rc);
+#endif
+}
+#endif /* GLUEPAD_LUA_PROBES */
+
+LRESULT CALLBACK Glue_WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
+{
+    if (msg == GLUEPAD_WM_PROBE)
+    {
+#if GLUEPAD_LUA_PROBES
+        Glue_DoProbes();
+#endif
+        return 0;
+    }
+    return CallWindowProcA(s_old, hwnd, msg, wp, lp);
+}
+
+void Glue_TriggerProbe(void)
+{
+    if (!s_hwnd)
+    {
+        static const char *names[] = { GLUEPAD_CLASSNAME, GLUEPAD_CLASSNAME_FALLBACK };
+        unsigned k;
+        for (k = 0; k < sizeof(names) / sizeof(names[0]); k++)
+        {
+            s_hwnd = FindWindowA(names[k], NULL);
+            if (s_hwnd)
+                break;
+        }
+        if (!s_hwnd)
+        {
+            if (!s_missingLogged)
+            {
+                s_missingLogged = 1;
+                GluePad_LogRaw("GluePad F2 wnd MISSING\r\n");
+            }
+            return;
+        }
+        s_old = (WNDPROC)SetWindowLongA(s_hwnd, GWL_WNDPROC, (LONG)Glue_WndProc);
+        if (!s_old)
+        {
+            s_hwnd = NULL;
+            GluePad_LogRaw("GluePad F2 wnd HOOKFAIL\r\n");
+            return;
+        }
+        if (!s_hookedLogged)
+        {
+            s_hookedLogged = 1;
+            GluePad_LogRaw("GluePad F2 wnd hooked\r\n");
+        }
+    }
+    /* Prontidao (licao do crash F2a): sonda Lua em estado semi-construido
+     * derruba o jogo. So sonda com cliente assentado: 20s de vida E o
+     * marcador de login 0xB41DA4==3 (observado in-game). Tudo read-only. */
+    {
+        DWORD t = GetTickCount();
+        DWORD v = 0;
+        if (s_t0 == 0)
+            s_t0 = t;
+        if (t - s_t0 < 20000)
+            return;
+        if (!GluePad_ReadU32(0xB41DA4UL, &v) || v != 3)
+        {
+            if (!s_waitLogged)
+            {
+                s_waitLogged = 1;
+                GluePad_LogRaw("GluePad F2 probe WAIT\r\n");
+            }
+            return;
+        }
+        if (!s_armedLogged)
+        {
+            s_armedLogged = 1;
+            GluePad_LogRaw("GluePad F2 probe ARMED\r\n");
+        }
+    }
+    PostMessageA(s_hwnd, GLUEPAD_WM_PROBE, 0, 0);
+}
+
+void Glue_Uninstall(void)
+{
+    if (s_hwnd && s_old)
+        SetWindowLongA(s_hwnd, GWL_WNDPROC, (LONG)s_old);
+    s_hwnd = NULL;
+    s_old = NULL;
+}

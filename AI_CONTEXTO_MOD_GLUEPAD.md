@@ -15,9 +15,10 @@
 * **Jogo:** World of Warcraft 1.12.1 build 5875 (`WoW.exe`, 32-bit), via `VanillaFixes.exe` (loader, processo nasce suspenso). Servidor Turtle WoW (realm N'Zoth).
 * **Linguagens:** C (DLL, MinGW-w64 i686) + Lua 5.0 estrito (helper `gluepad.lua` executado no glue state).
 * **Pasta do jogo:** `C:\Users\rodri\OneDrive\wow\octowow\` (`WoW.exe`, `VanillaFixes.exe`, `dlls.txt`).
-* **Entrega:** `mods/GluePad.dll` + 1 linha em `dlls.txt`. Carga ocorre antes do glue — a DLL já está dentro do processo no login.
+* **Entrega/deploy (obrigatório após TODO build):** `build.bat` compila E auto-instala em `C:\Users\rodri\OneDrive\wow\octowow\mods\GluePad.dll` (cópia automática — junction NÃO existe para arquivo, só diretório). Depois conferir que `dlls.txt` (LF puro, backup `dlls.txt.bak-gluepad`) contém a linha `mods/GluePad.dll`. Carga ocorre antes do glue — a DLL já está dentro do processo no login.
+* **Log de validação F1:** `%TEMP%\gluepad_f1.log` (a DLL escreve lá + `OutputDebugString`; usuário valida abrindo o `.txt`, sem DebugView).
 * **Cadeia `dlls.txt` (prova de entrega):** `SuperWoWhook.dll`, `WoWTranslate.dll`, `Interact.dll`, `ClassicAPI.dll`, `mods/OctoLogin.dll`, `transmogfix.dll`, `twloader.dll`.
-* **ClassicAPI.dll 1.15.16.0 (ponte pronta, verificada via strings):** `RunScript`, `C_Glue`, `IsOnGlueScreen`, `IsFirstLoadThisSession`, `LoginWithSavedAccount`, `GetSavedAccounts`, `SetSavedCharacterOrder`.
+* **ClassicAPI.dll 1.15.16.0 (corrigido F1c):** export PE tem SÓ `Load` — `RunScript`, `C_Glue`, `IsOnGlueScreen` etc. existem como strings/nomes Lua internos, NÃO como exports. Ponte via `GetProcAddress` para eles é impossível (`api MISSING` in-game prova); a ponte Lua continua válida SÓ via `getglobal(L,"RunScript")+pushstring+pcall` com endereços stock (a provar em F2).
 * **Toolchains:** `C:\Tools\mingw32\` (GCC 16.2.0 i686-ucrt-posix-dwarf, `xinput.h` incluso) e `C:\Tools\lua50\` (`luac50.exe` 5.0.3). Sem admin, sem MSVC, sem CMake, sem Wine.
 * **Repo:** [wow-login-gamepad-navigation](https://github.com/Theadrill/wow-login-gamepad-navigation), clone em `C:\PROJETOS\wow-login-gamepad-navigation`.
 
@@ -37,10 +38,10 @@ docs/plano_gluepad_dll.md  plano faseado F0–F5 (fonte da verdade do passo a pa
 ## 3. Padrão DLL 1.12 (obrigatório seguir)
 
 * Compilar SEMPRE i686 32-bit (`-m32` implícito no toolchain; PE `Machine=0x014C`). 64-bit não carrega.
-* Template de hook = Interact: MinHook em função que recebe `lua_State*`, convenções `__fastcall`/`__thiscall`/`__stdcall` respeitadas.
+* Template de hook = Interact: MinHook em função que recebe `lua_State*`, convenções `__fastcall`/`__thiscall`/`__stdcall` respeitadas. PROVA in-game: o Lua deste cliente é thiscall/fastcall (L em ECX) — `__cdecl` crasha; ver `glue.c`.
 * Capturar L sem hook: `GetContext = 0x7040D0` → `*0xCEEF74` = `lua_State*` corrente.
 * Executar Lua no glue: `getglobal(L,"RunScript") + pushstring(chunk) + pcall` (ClassicAPI registrado no glue state). Endereços Lua stock: `gettop 0x6F3070`, `pushstring 0x6F3890`, `gettable 0x6F3A40`, `pcall 0x6F41A0`. FrameScript: `Execute 0x704CD0`, `Register 0x704120`.
-* **Lua só na main thread** (VM não é thread-safe): thread do pad enfileira, hook EndScene drena (jogo roda sob `d3d9.dll`/DXVK; alternativa = hook de mensagem da janela).
+* **Lua só na main thread** (VM não é thread-safe): thread do pad enfileira, subclass da janela (`GxWindowClass` + mensagem custom) drena na main thread — EndScene virou alternativa (jogo roda sob `d3d9.dll`/DXVK).
 * **Gating:** tudo ativo SÓ com `screenState` na faixa glue. Mundo carregou = silêncio total (o addon ConsoleModeVanilla é dono do gamepad in-game e depende do Steam Input).
 * Descoberta de frames em runtime (`GetChildren()` desde `GlueParent`, filtrar `Button`/`EditBox` visíveis+habilitados, ordenar por posição). NÃO hardcodar nomes do glue custom Turtle/Octo — update deles não pode quebrar o mod. Nomes stock só como hints.
 
@@ -85,7 +86,7 @@ Usuário joga com Steam Input (pad→teclado/mouse virtual). Sem filtro = ação
 
 1. Implementar por fases F0–F5 do `docs/plano_gluepad_dll.md`, UMA fase por vez.
 2. Parada obrigatória ao fim de cada fase: validação in-game pelo usuário (roteiros no plano) antes de commit.
-3. Build sempre reproduzível via script (`build.bat`/`build.ps1`, sem MSVC). Compilar = PE `0x014C` + smoke de carga (aparecer na lista de módulos com o jogo no glue).
+3. Build sempre reproduzível via script (`build.bat`/`build.ps1`, sem MSVC). Compilar = PE `0x014C` + auto-install no `mods\` do jogo + checagem do `dlls.txt` + smoke de carga (aparecer na lista de módulos com o jogo no glue).
 4. `gluepad.lua` passa em `luac50 -p` antes de qualquer teste.
 5. Sem commit, sem push antes da aprovação da fase. Push só quando o usuário pedir, uma vez só.
 6. Outro agente atua no repo-irmão ConsoleModeVanilla — NÃO tocar nele daqui; ponto de sincronia: a DLL dorme in-game, o addon nunca mexe em glue.
