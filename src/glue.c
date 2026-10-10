@@ -245,20 +245,54 @@ HWND Glue_GetHwnd(void)
     return s_hwnd;
 }
 
+/* Le string curta do topo (pos-pushglobal de string); "" se nao-string. */
+static void Glue_TopShortStr(GlueL L, char *out, unsigned cap)
+{
+    unsigned char slot[16];
+    int tt = Glue_TopTT(L, slot);
+    out[0] = '\0';
+    if (tt != GLUEPAD_TT_STRING)
+        return;
+    {
+        DWORD ts = 0, len = 0;
+        memcpy(&ts, slot + 8, 4);
+        if (GluePad_ReadU32(ts + 12, &len) && len < cap &&
+            GluePad_ReadBytes(ts + 16, out, len + 1))
+            out[len] = '\0';
+    }
+}
+
 static int Glue_CallL(const char *tag, const char *chunk)
 {
     GetContextFn getctx = (GetContextFn)GLUEPAD_ADDR_GETCONTEXT;
     DWORD chk = 0;
     GlueL L;
     int rc;
-    char line[128];
+    char line[192];
+    /* F7-diag: todo intent registra onde o foco parou (so nome de frame).
+     * defs (8KB) pula a sonda: big nao cabe o helper + query. */
+    static const char *FOCUSQ =
+        " if GluePad_FocusName then GluePad_Mbox = GluePad_FocusName() end";
     if (!GluePad_ReadU32(GLUEPAD_ADDR_GETCONTEXT, &chk))
         return -99;
     L = getctx();
     if (!L)
         return -99;
-    rc = Glue_RunChunk(L, chunk, 0);
-    wsprintfA(line, "GluePad F2 nav %s rc=%d\r\n", tag, rc);
+    if (lstrlenA(chunk) < 128)
+    {
+        char big[256];
+        char foc[64];
+        wsprintfA(big, "%s%s", chunk, FOCUSQ);
+        rc = Glue_RunChunk(L, big, 0);
+        Glue_PushGlobal(L, "GluePad_Mbox");
+        Glue_TopShortStr(L, foc, 60);
+        wsprintfA(line, "GluePad F2 nav %s rc=%d foc=%s\r\n", tag, rc, foc);
+    }
+    else
+    {
+        rc = Glue_RunChunk(L, chunk, 0);
+        wsprintfA(line, "GluePad F2 nav %s rc=%d foc=-\r\n", tag, rc);
+    }
     GluePad_LogRaw(line);
     return rc;
 }

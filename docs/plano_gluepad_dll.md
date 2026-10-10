@@ -256,9 +256,10 @@ Teste espelha o harness do OctoLogin (Wine + XInput virtual).
   in-game: `OTHER|RealmList`, 3 fileiras + Ok/Cancel/Close (nomes dos
   realms nao vazam). F5b em codigo: zonas REALMS+OKCANCEL, B=Cancel.
   PROVADO in-game: fileiras azuis, A seleciona/confirma, B cancela.
-- **F6 — Criação de char + homologação (EM ANDAMENTO):** F6a-descoberta:
-  Y na tela de criacao p/ fotografar nomes (hoje cai no modo LOGIN por
-  causa do EditBox de nome — funciona truncado). PROVADO F6a in-game:
+- **F6 — Criacao de char (validada fluxo+tercos; falta homologacao):**
+  F6a-descoberta: Y na tela de criacao p/ fotografar nomes (hoje cai no
+  modo LOGIN por causa do EditBox de nome — funciona truncado). PROVADO
+  F6a in-game:
   N=39 (`CharacterCreateRaceButton1..10`, `ClassButton1..6`, Gender,
   Customization 1..5, NameEdit, Okay/Back). F6b em codigo:   modo CREATE
   (RACA+CLASSE+GENERO+CUSTOM+NOME+CONFIRMA, B=Back; Okay cria mesmo).
@@ -266,6 +267,21 @@ Teste espelha o harness do OctoLogin (Wine + XInput virtual).
   ordem por altura) — 6 zonas por categoria quebravam a ordem visual.
   PROVADO in-game (fluxo unico). Proximo: 3 zonas por X (ESQUERDA <400,
   MEIO 400-900, DIREITA >=900; Randomize = excecao nomeada p/ o MEIO).
+  F6c em codigo (pedido do dono): tercos RELATIVOS (lf/UIParent, sem
+  absoluto) na criacao (ESQUERDA/MEIO/DIREITA) e no corte do login
+  (rel>0.62); LEFT/RIGHT espacial p/ toda tela (vizinho real: dX + 2*dY,
+  sem vizinho = parado); B da criacao varre zonas. F6d (prisao de zona
+  no Autologin): UP/DOWN tambem espacial (eixo principal + 2x desvio,
+   wrap p/ extremo oposto); B guarda zona so ao trocar.
+- **F7 — Addons (EM ANDAMENTO, pedido do dono):** PROVADO via Y: N=65
+  (`AddonListEntry1..19`+Enabled, Ok/Cancel/EnableAll/DisableAll/Close,
+  ForceLoad, DropDown; Scroll/ScriptMemory fora). Armadilha irma da
+  criacao: ScriptMemory EditBox jogava p/ LOGIN (zonas mortas). F7 em
+  codigo: modo ADDONS (ENTRADAS+RODAPE, B=Cancel). Limite: scroll.
+  F7-diag (prisao no rodape, a investigar): todo intent loga `foc=frame`.
+  F7-apagao (pos-mortem): insert do bloco dialogo comeu o header do Boot
+  (`GluePad_Boot`=nil, tudo no-op c/ rc=0) — REGRA: apos mover bloco,
+  grepar inventario de funcoes (duplicada/ausente) antes do build.
 
 ## 8. Riscos e limitações aceitas
 

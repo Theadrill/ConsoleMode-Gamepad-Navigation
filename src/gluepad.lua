@@ -36,6 +36,23 @@ local function framename(f)
   return nil
 end
 
+-- Largura do UIParent em unidades de UI (zonas relativas, a prova de
+-- resolucao/aspecto; fallback 1600 = largura observada nos dumps).
+local function uiparentW()
+  if type(UIParent) ~= "table" and type(UIParent) ~= "userdata" then
+    return 1600
+  end
+  local g = UIParent.GetWidth
+  if type(g) ~= "function" then
+    return 1600
+  end
+  local ok, r = pcall(g, UIParent)
+  if ok and type(r) == "number" and r > 0 then
+    return r
+  end
+  return 1600
+end
+
 -- F3a: qual tela do glue? (definida depois de collect(): usa a
 -- varredura profunda.) LOGIN = tem EditBox visivel (so o login tem).
 -- Outra tela = OTHER|<1o frame visivel> (nome estatico, sem texto/dado).
@@ -44,7 +61,7 @@ end
 -- desligava o login). F4-nota: dialogo com editbox precisara ter
 -- precedencia aqui (GlueDialog visivel = modo dialogo).
 
-local function zoneOf(t, nm, lf, tp)
+local function zoneOf(t, nm, lf, tp, w)
   if t == "EditBox" then
     return "CENTRO"
   end
@@ -60,11 +77,18 @@ local function zoneOf(t, nm, lf, tp)
   if string.find(nm, "Exit") or string.find(nm, "Quit") then
     return "SISTEMA"
   end
-  if lf ~= nil and lf > 1000 then
-    if tp ~= nil and tp < 440 then
-      return "LINKS"
+  -- Corte relativo (era lf>1000 absoluto): mesma particao nos dumps.
+  if lf ~= nil then
+    local wv = w
+    if wv == nil or wv <= 0 then
+      wv = 1600
     end
-    return "CONTAS"
+    if lf / wv > 0.62 then
+      if tp ~= nil and tp < 440 then
+        return "LINKS"
+      end
+      return "CONTAS"
+    end
   end
   return "CENTRO"
 end
@@ -73,6 +97,7 @@ local function collect()
   local items = {}
   local n = 0
   local cap = 300
+  local w = uiparentW()
   local function rec(c)
     if n >= cap then
       return
@@ -111,7 +136,7 @@ local function collect()
       lf = 0
     end
     n = n + 1
-    items[n] = { ref = c, t = t, nm = nm, tp = tp, lf = lf, zn = zoneOf(t, nm, lf, tp) }
+    items[n] = { ref = c, t = t, nm = nm, tp = tp, lf = lf, zn = zoneOf(t, nm, lf, tp, w) }
   end
   local function walk(f, depth)
     if n >= cap or depth > 6 then
@@ -149,10 +174,15 @@ function GluePad_Screen()
   local i = 1
   -- F6b: criacao primeiro (tem EditBox de nome, mas e tela propria).
   -- Ancorado ^ : CharSelectCreateCharacterButton (char-select) nao casa.
+  -- F7-addons: janela de addons tambem tem EditBox (ScriptMemory, so
+  -- display) - modo proprio antes do LOGIN, mesma tecnica.
   while i <= n do
     local nm = items[i].nm
     if string.find(nm, "^CharacterCreate") or string.find(nm, "^CharCreate") then
       return "CREATE"
+    end
+    if string.find(nm, "^AddonList") or string.find(nm, "^AddonCharacter") then
+      return "ADDONS"
     end
     i = i + 1
   end
@@ -218,21 +248,59 @@ end
 -- F6b-fix (UX): a tela e UM fluxo vertical (raca->genero->classe->custom
 -- ->nome->okay); quebrar por categoria obrigava LEFT/RIGHT e invertia a
 -- ordem visual. Uma zona CRIACAO ordenada por altura desce naturalmente.
-local KZORDER = { "CRIACAO" }
-
-local function kzone(t, nm)
-  if string.find(nm, "^CharacterCreateRaceButton") or
+-- F6c (pedido do dono): 3 zonas por TERCOS relativos (ESQUERDA/MEIO/
+-- DIREITA); Randomize = excecao nomeada p/ o MEIO (mora a esquerda).
+local KZORDER = { "ESQUERDA", "MEIO", "DIREITA" }
+local function kzone(t, nm, lf, w)
+  if string.find(nm, "RandomizeButton") then
+    return "MEIO"
+  end
+  local incl = string.find(nm, "^CharacterCreateRaceButton") or
      string.find(nm, "^CharacterCreateClassButton") or
      string.find(nm, "^CharacterCreateGenderButton") or
      string.find(nm, "^CharacterCustomizationButtonFrame") or
-     string.find(nm, "RandomizeButton") or
      string.find(nm, "RandomName") or
      string.find(nm, "OkayButton") or
-     string.find(nm, "BackButton") then
-    return "CRIACAO"
+     string.find(nm, "BackButton") or
+     t == "EditBox"
+  if not incl then
+    return nil
   end
-  if t == "EditBox" then
-    return "CRIACAO"
+  local wv = w
+  if wv == nil or wv <= 0 then
+    wv = 1600
+  end
+  local rel = 0
+  if lf ~= nil then
+    rel = lf / wv
+  end
+  if rel >= 0.66 then
+    return "DIREITA"
+  end
+  if rel >= 0.33 then
+    return "MEIO"
+  end
+  return "ESQUERDA"
+end
+-- F7-addons (pedido do dono: B sai da lista). ENTRADAS = checks
+-- EntryNEnabled (dono pediu: navegar SO pelos checkboxes; A alterna).
+-- Botoes de fileira SAEM (co-localizados = foco incerto). RODAPE =
+-- Ok/Cancel/EnableAll/DisableAll/Close/ForceLoad/DropDown. Scroll e
+-- ScriptMemory pulam fora. Limite: scroll nao alcancavel (19 visiveis).
+local AZORDER = { "ENTRADAS", "RODAPE" }
+
+local function azone(t, nm)
+  if t == "CheckButton" and string.find(nm, "^AddonListEntry%d+Enabled$") then
+    return "ENTRADAS"
+  end
+  if string.find(nm, "AddonListOkButton") or
+     string.find(nm, "AddonListCancelButton") or
+     string.find(nm, "AddonListEnableAllButton") or
+     string.find(nm, "AddonListDisableAllButton") or
+     string.find(nm, "AddonListCloseButton") or
+     string.find(nm, "AddonListForceLoad") or
+     string.find(nm, "^AddonCharacterDropDown") then
+    return "RODAPE"
   end
   return nil
 end
@@ -370,6 +438,23 @@ local function setdlg(g, dlg)
   return false
 end
 
+-- F7-diag: nome do foco atual (so nomes de frame; p/ calibrar o espacial).
+function GluePad_FocusName()
+  local g = GluePad
+  if g.dlg ~= nil then
+    local it = g.dlg[g.dlgii]
+    if it ~= nil and it.nm ~= nil then
+      return it.nm
+    end
+    return "dlg?"
+  end
+  local it = cur()
+  if it ~= nil and it.nm ~= nil then
+    return it.nm
+  end
+  return "?"
+end
+
 function GluePad_Boot()
   local g = GluePad
   -- F3b: reconstroi ao trocar de tela (login <-> char); mesma tela = re-mostra.
@@ -440,12 +525,28 @@ function GluePad_Boot()
   elseif scr == "CREATE" then
     g.mode = "create"
     order = KZORDER
-    zones = { CRIACAO = {} }
-    zn = { CRIACAO = 0 }
+    zones = { ESQUERDA = {}, MEIO = {}, DIREITA = {} }
+    zn = { ESQUERDA = 0, MEIO = 0, DIREITA = 0 }
+    local bw = uiparentW()
     local i = 1
     while i <= n do
       local it = items[i]
-      local z = kzone(it.t, it.nm)
+      local z = kzone(it.t, it.nm, it.lf, bw)
+      if z ~= nil and zones[z] ~= nil then
+        zn[z] = zn[z] + 1
+        zones[z][zn[z]] = it
+      end
+      i = i + 1
+    end
+  elseif scr == "ADDONS" then
+    g.mode = "addons"
+    order = AZORDER
+    zones = { ENTRADAS = {}, RODAPE = {} }
+    zn = { ENTRADAS = 0, RODAPE = 0 }
+    local i = 1
+    while i <= n do
+      local it = items[i]
+      local z = azone(it.t, it.nm)
       if z ~= nil and zones[z] ~= nil then
         zn[z] = zn[z] + 1
         zones[z][zn[z]] = it
@@ -474,6 +575,111 @@ function GluePad_Boot()
   if not setdlg(g, finddlg(items, n)) then
     show(cur())
   end
+end
+
+-- F6c: LEFT/RIGHT espacial (pedido do dono: ir p/ o lado certo, nao
+-- ciclar a esmo). F6d: UP/DOWN tambem (fim da prisao de zona: do painel
+-- Autologin, DOWN desce p/ os links). Vizinho real na direcao: eixo
+-- principal + 2x o desvio no outro eixo. Sem vizinho = wrap p/ o extremo
+-- oposto (ciclico honesto). Vale p/ toda tela (lf/tp, zero codigo/tela).
+local function spatial(g, dir)
+  local c = cur()
+  if c == nil then
+    return nil
+  end
+  local bestscore = nil
+  local bestzi = nil
+  local bestii = nil
+  local zi = 1
+  while zi <= table.getn(g.order) do
+    local z = g.zones[g.order[zi]]
+    local ii = 1
+    while ii <= table.getn(z) do
+      local it = z[ii]
+      local dx = it.lf - c.lf
+      local dy = c.tp - it.tp
+      local prim = nil
+      local sec = nil
+      if dir == "RIGHT" and dx > 4 then
+        prim = dx
+        sec = dy
+      elseif dir == "LEFT" and dx < -4 then
+        prim = -dx
+        sec = dy
+      elseif dir == "DOWN" and dy > 4 then
+        prim = dy
+        sec = dx
+      elseif dir == "UP" and dy < -4 then
+        prim = -dy
+        sec = dx
+      end
+      if prim ~= nil then
+        if sec < 0 then
+          sec = -sec
+        end
+        local score = prim + 2 * sec
+        if bestscore == nil or score < bestscore then
+          bestscore = score
+          bestzi = zi
+          bestii = ii
+        end
+      end
+      ii = ii + 1
+    end
+    zi = zi + 1
+  end
+  if bestscore ~= nil then
+    return { zi = bestzi, ii = bestii }
+  end
+  -- Wrap: extremo oposto (secundario minimo desempata).
+  local wrap = nil
+  local wsec = nil
+  zi = 1
+  while zi <= table.getn(g.order) do
+    local z = g.zones[g.order[zi]]
+    local ii = 1
+    while ii <= table.getn(z) do
+      local it = z[ii]
+      local p = nil
+      local s = nil
+      if dir == "RIGHT" then
+        p = -it.lf
+        s = it.tp - c.tp
+      elseif dir == "LEFT" then
+        p = it.lf
+        s = it.tp - c.tp
+      elseif dir == "DOWN" then
+        p = it.tp
+        s = it.lf - c.lf
+      else
+        p = -it.tp
+        s = it.lf - c.lf
+      end
+      if s < 0 then
+        s = -s
+      end
+      local take = false
+      if wrap == nil then
+        take = true
+      elseif p > wrap then
+        take = true
+      elseif p == wrap and s < wsec then
+        take = true
+      end
+      if take then
+        wrap = p
+        wsec = s
+        bestzi = zi
+        bestii = ii
+      end
+      ii = ii + 1
+    end
+    zi = zi + 1
+  end
+  if wrap == nil then
+    return nil
+  end
+  return { zi = bestzi, ii = bestii }
 end
 
 function GluePad_Move(dir)
@@ -509,45 +715,22 @@ function GluePad_Move(dir)
   if z == nil or table.getn(z) == 0 then
     return
   end
-  if dir == "UP" or dir == "DOWN" then
-    hide(cur())
-    local m = table.getn(z)
-    if dir == "UP" then
-      g.ii = g.ii - 1
-      if g.ii < 1 then
-        g.ii = m
-      end
-    else
-      g.ii = g.ii + 1
-      if g.ii > m then
-        g.ii = 1
-      end
-    end
-    show(cur())
-  elseif dir == "LEFT" or dir == "RIGHT" then
-    hide(cur())
+  -- F6d: toda direcao e espacial (entre zonas inclusive); B guarda a zona.
+  local tgt = spatial(g, dir)
+  if tgt == nil then
+    return
+  end
+  if tgt.zi == g.zi and tgt.ii == g.ii then
+    return
+  end
+  hide(cur())
+  if tgt.zi ~= g.zi then
     local h = g.hist
     h[table.getn(h) + 1] = g.zi
-    if dir == "RIGHT" then
-      g.zi = g.zi + 1
-      if g.zi > table.getn(g.order) then
-        g.zi = 1
-      end
-    else
-      g.zi = g.zi - 1
-      if g.zi < 1 then
-        g.zi = table.getn(g.order)
-      end
-    end
-    local nz = g.zones[g.order[g.zi]]
-    if nz == nil or table.getn(nz) == 0 then
-      g.zi = h[table.getn(h)]
-      h[table.getn(h)] = nil
-    else
-      g.ii = 1
-    end
-    show(cur())
   end
+  g.zi = tgt.zi
+  g.ii = tgt.ii
+  show(cur())
 end
 
 function GluePad_Back()
@@ -570,21 +753,48 @@ function GluePad_Back()
     end
     return
   end
-  -- F6b: B na criacao = Back (cancela, volta ao char-select).
-  if g.mode == "create" then
-    local kz = g.zones["CRIACAO"]
-    if kz ~= nil then
-      local i = 1
-      while i <= table.getn(kz) do
-        if string.find(kz[i].nm, "Back") then
-          local f = kz[i].ref
-          if f.Click then
-            f:Click()
+  -- F7-addons: B = Cancel (sai sem salvar; Ok confirma via A).
+  if g.mode == "addons" then
+    local oi = 1
+    while oi <= table.getn(g.order) do
+      local az = g.zones[g.order[oi]]
+      if az ~= nil then
+        local i = 1
+        while i <= table.getn(az) do
+          if string.find(az[i].nm, "Cancel") then
+            local f = az[i].ref
+            if f.Click then
+              f:Click()
+            end
+            return
           end
-          return
+          i = i + 1
         end
-        i = i + 1
       end
+      oi = oi + 1
+    end
+    return
+  end
+  -- F6b: B na criacao = Back (cancela, volta ao char-select; varre as
+  -- zonas, robusto a reparticao).
+  if g.mode == "create" then
+    local oi = 1
+    while oi <= table.getn(g.order) do
+      local kz = g.zones[g.order[oi]]
+      if kz ~= nil then
+        local i = 1
+        while i <= table.getn(kz) do
+          if string.find(kz[i].nm, "Back") then
+            local f = kz[i].ref
+            if f.Click then
+              f:Click()
+            end
+            return
+          end
+          i = i + 1
+        end
+      end
+      oi = oi + 1
     end
     return
   end
