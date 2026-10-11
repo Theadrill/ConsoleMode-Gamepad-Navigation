@@ -9,6 +9,9 @@ static int s_aDown = 0;
 static int s_bDown = 0;
 static int s_yDown = 0;
 static int s_xDown = 0;
+/* F13d-Deck: LB/RB com edge (segurar nao repete, como A/B/X/Y). */
+static int s_lbDown = 0;
+static int s_rbDown = 0;
 static int s_nohwndLogged = 0;
 /* F8-hold: bit por direcao (intent 0-3); down repetido nao re-posta. */
 static DWORD s_heldDirs = 0;
@@ -18,7 +21,8 @@ static int KeyCap_IsMapped(DWORD vk)
     return vk == (DWORD)GLUEPAD_VK_UP || vk == (DWORD)GLUEPAD_VK_DOWN ||
            vk == (DWORD)GLUEPAD_VK_LEFT || vk == (DWORD)GLUEPAD_VK_RIGHT ||
            vk == (DWORD)GLUEPAD_VK_A || vk == (DWORD)GLUEPAD_VK_B ||
-           vk == (DWORD)GLUEPAD_VK_X || vk == (DWORD)GLUEPAD_VK_Y;
+           vk == (DWORD)GLUEPAD_VK_X || vk == (DWORD)GLUEPAD_VK_Y ||
+           vk == (DWORD)GLUEPAD_VK_LB || vk == (DWORD)GLUEPAD_VK_RB;
 }
 
 int KeyCap_IntentForVk(DWORD vk)
@@ -31,6 +35,8 @@ int KeyCap_IntentForVk(DWORD vk)
     if (vk == (DWORD)GLUEPAD_VK_B) return GLUEPAD_INT_B;
     if (vk == (DWORD)GLUEPAD_VK_Y) return GLUEPAD_INT_DUMP;
     if (vk == (DWORD)GLUEPAD_VK_X) return GLUEPAD_INT_X;
+    if (vk == (DWORD)GLUEPAD_VK_LB) return GLUEPAD_INT_LB;
+    if (vk == (DWORD)GLUEPAD_VK_RB) return GLUEPAD_INT_RB;
     return -1; /* resto: sem intent */
 }
 
@@ -90,6 +96,23 @@ static LRESULT CALLBACK KeyCap_Proc(int nCode, WPARAM wParam, LPARAM lParam)
                     if (down && !s_xDown) { s_xDown = 1; post = 1; }
                     if (!down) s_xDown = 0;
                 }
+                else if (k->vkCode == (DWORD)GLUEPAD_VK_LB)
+                {
+                    /* F13d-mom: DOWN arma (edge); UP desarma direto
+                     * (momentaneo, como shift fisico). */
+                    if (down && !s_lbDown) { s_lbDown = 1; post = 1; }
+                    if (!down && s_lbDown)
+                    {
+                        s_lbDown = 0;
+                        PostMessageA(h, GLUEPAD_WM_ACT, (WPARAM)GLUEPAD_INT_LBUP, 0);
+                    }
+                }
+                else if (k->vkCode == (DWORD)GLUEPAD_VK_RB)
+                {
+                    /* F13d-Deck: toggle ABC/123 com edge. */
+                    if (down && !s_rbDown) { s_rbDown = 1; post = 1; }
+                    if (!down) s_rbDown = 0;
+                }
                 else if (intent >= 0 && intent <= 3)
                 {
                     /* F8-hold: borda posta 1x e arma o timer; o timer
@@ -121,11 +144,14 @@ static LRESULT CALLBACK KeyCap_Proc(int nCode, WPARAM wParam, LPARAM lParam)
         }
         else if (!down)
         {
-            /* Solta fora do glue reseta edge (sem fantasma ao voltar). */
+            /* Solta fora do glue reseta edge (sem fantasma ao voltar;
+             * LB fora do glue nao posta LBUP: sem painel, sem shift). */
             if (k->vkCode == (DWORD)GLUEPAD_VK_A) s_aDown = 0;
             if (k->vkCode == (DWORD)GLUEPAD_VK_B) s_bDown = 0;
             if (k->vkCode == (DWORD)GLUEPAD_VK_Y) s_yDown = 0;
             if (k->vkCode == (DWORD)GLUEPAD_VK_X) s_xDown = 0;
+            if (k->vkCode == (DWORD)GLUEPAD_VK_LB) s_lbDown = 0;
+            if (k->vkCode == (DWORD)GLUEPAD_VK_RB) s_rbDown = 0;
             /* Solta do D-pad fora do glue tambem para o repeat. */
             {
                 int ii = KeyCap_IntentForVk(k->vkCode);

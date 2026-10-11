@@ -43,6 +43,29 @@ void GluePad_SendKeyStamped(WORD vk)
     SendInput(1, &out, sizeof(INPUT));
 }
 
+/* F13d-Deck: maiuscula via SHIFT segurado (1 chamada SendInput, 4 eventos
+ * ordenados, tudo carimbado; o hook libera pelo dwExtraInfo). NUNCA logar. */
+void GluePad_SendKeyStampedWithShift(WORD vk)
+{
+    INPUT ins[4];
+    ZeroMemory(ins, sizeof(ins));
+    ins[0].type = INPUT_KEYBOARD;
+    ins[0].ki.wVk = VK_SHIFT;
+    ins[0].ki.dwExtraInfo = GLUEPAD_EXTRAINFO;
+    ins[1].type = INPUT_KEYBOARD;
+    ins[1].ki.wVk = vk;
+    ins[1].ki.dwExtraInfo = GLUEPAD_EXTRAINFO;
+    ins[2].type = INPUT_KEYBOARD;
+    ins[2].ki.wVk = vk;
+    ins[2].ki.dwFlags = KEYEVENTF_KEYUP;
+    ins[2].ki.dwExtraInfo = GLUEPAD_EXTRAINFO;
+    ins[3].type = INPUT_KEYBOARD;
+    ins[3].ki.wVk = VK_SHIFT;
+    ins[3].ki.dwFlags = KEYEVENTF_KEYUP;
+    ins[3].ki.dwExtraInfo = GLUEPAD_EXTRAINFO;
+    SendInput(4, ins, sizeof(INPUT));
+}
+
 static void GluePad_Log(const char *btn, DWORD screen, int isRepeat)
 {
     char buf[128];

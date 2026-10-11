@@ -711,13 +711,58 @@ local function kbrows(mode)
   return KB_ROWS_ABC
 end
 
+-- F13d-ind: shift armado aumenta as letras em KB_BUMP px (pista visual).
+-- GetFont/SetFont com pcall: se a API nao existir no glue, vira no-op e
+-- o shift segue valendo na logica. Par simetrico (sobe UMA vez no arme,
+-- desce UMA vez no consumo/fecho, sempre guardado por g.kb.shift).
+-- F13d-ind: prova (10px p/ validar; o valor final vem depois).
+local KB_BUMP = 10
+
+local function kbresize(g, delta)
+  if g.kb == nil or g.kb.lab == nil then
+    return
+  end
+  local r = 1
+  while r <= 4 do
+    local labr = g.kb.lab[r]
+    if labr ~= nil then
+      local n = 10
+      if r == 4 then
+        n = 4
+      end
+      local c = 1
+      while c <= n do
+        local fs = labr[c]
+        if fs ~= nil then
+          local ok, f, sz = pcall(function() return fs:GetFont() end)
+          if ok and type(f) == "string" and type(sz) == "number" then
+            local ns = sz + delta
+            if ns < 8 then
+              ns = 8
+            end
+            pcall(function() fs:SetFont(f, ns) end)
+          end
+        end
+        c = c + 1
+      end
+    end
+    r = r + 1
+  end
+end
+
 local function kbclose(g)
   if g.kb ~= nil and g.kb.panel ~= nil then
     pcall(function() g.kb.panel:Hide() end)
   end
+  -- F13d-ind: fecha com shift armado devolve o tamanho (par do arme).
+  if g.kb ~= nil and g.kb.shift then
+    kbresize(g, -KB_BUMP)
+  end
   g.kb = nil
   -- F13c: fecha sem rastro (a mailbox nao guarda o ultimo VK).
   GluePad_Mbox = nil
+  -- F13d: o sinal de shift (Mbox2, 1/nil) nao sobrevive ao painel.
+  GluePad_Mbox2 = nil
 end
 
 local function kbcursor(g)
@@ -1057,6 +1102,34 @@ function GluePad_KbToggle()
   kbcursor(g)
 end
 
+-- F13d-mom: LB = shift momentaneo (DOWN arma, UP desarma; como shift
+-- fisico: segura LB + A = maiuscula, solta = normal). So com kb aberto.
+function GluePad_KbShift()
+  local g = GluePad
+  if g.kb == nil then
+    return
+  end
+  -- Re-arme sem solta nao empilha o aumento.
+  if g.kb.shift then
+    return
+  end
+  g.kb.shift = true
+  kbresize(g, KB_BUMP)
+end
+
+-- F13d-mom: solta do LB (UP). Sem log (o soltar nao polui o diario).
+function GluePad_KbUnshift()
+  local g = GluePad
+  if g.kb == nil then
+    return
+  end
+  if not g.kb.shift then
+    return
+  end
+  g.kb.shift = nil
+  kbresize(g, -KB_BUMP)
+end
+
 -- F13b: painel aberto? (X/Y do pad viram backspace/espaco; Y volta a
 -- ser dump com o painel fechado). Escreve 1/nil no Mbox p/ o C ler.
 function GluePad_IsKb()
@@ -1076,6 +1149,10 @@ function GluePad_KbPress()
   if g.kb == nil then
     return nil
   end
+  -- F13d-mom: shift momentaneo nao consome no A (vale enquanto o LB
+  -- estiver segurado; varios A's seguidos saem maiusculos). Solta no UP.
+  local sh = g.kb.shift
+  GluePad_Mbox2 = nil
   local r = g.kb.r
   local c = g.kb.c
   if r == 4 then
@@ -1105,6 +1182,11 @@ function GluePad_KbPress()
   -- Letras (0x41-0x5A) e digitos (0x30-0x39) = wVk direto, sem shift
   -- (minusculas; shift vem na F13d). Simbolos: no-op na F13b.
   if (b >= 65 and b <= 90) or (b >= 48 and b <= 57) then
+    -- F13d: shift so em letra (shift+digito daria simbolo US, fora do
+    -- escopo; o campo do Turtle valida - observar, nao contornar).
+    if sh and b >= 65 and b <= 90 then
+      GluePad_Mbox2 = 1
+    end
     return b
   end
   return -1
@@ -1121,8 +1203,13 @@ function GluePad_FocusName()
     return "dlg?"
   end
   -- F13b: cursor posicional (nunca o rotulo: nao vaza a digitacao).
+  -- F13d: sufixo S = shift armado (estado, nao conteudo).
   if g.kb ~= nil then
-    return "KB:" .. tostring(g.kb.r) .. "," .. tostring(g.kb.c)
+    local s = ""
+    if g.kb.shift then
+      s = "S"
+    end
+    return "KB:" .. tostring(g.kb.r) .. "," .. tostring(g.kb.c) .. s
   end
   local it = cur()
   if it ~= nil and it.nm ~= nil then

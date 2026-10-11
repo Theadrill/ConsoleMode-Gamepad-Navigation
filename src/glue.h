@@ -47,4 +47,8 @@ void GluePad_SendKeyStamped(WORD vk);
 /* Restaura a janela no unload. */
 void Glue_Uninstall(void);
 
+/* F13d-Deck: letra maiuscula via SHIFT carimbado (SHIFT down + vk + SHIFT
+ * up, tudo com dwExtraInfo proprio). NUNCA logar o vk. Def. em dllmain.c. */
+void GluePad_SendKeyStampedWithShift(WORD vk);
+
 #endif

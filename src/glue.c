@@ -494,22 +494,35 @@ void Glue_ActIntent(int intent)
     case GLUEPAD_INT_A:
     {
         /* F13b: A no teclado virtual. KbPress decide (numero = VK p/
-         * SendInput carimbado; -1 = tratado no Lua; nil = Activate). */
+         * SendInput carimbado; -1 = tratado no Lua; nil = Activate).
+         * F13d-mom: Mbox2 = 1 = LB segurado no ato (letra maiuscula). */
         GetContextFn getctxA = (GetContextFn)GLUEPAD_ADDR_GETCONTEXT;
         GlueL LA = getctxA();
         double vkd = 0.0;
+        double shd = 0.0;
         int isnum = 0;
+        int withshift = 0;
         if (LA)
         {
-            Glue_RunChunk(LA, "GluePad_Mbox = nil if GluePad_KbPress then GluePad_Mbox = GluePad_KbPress() end", 0);
+            Glue_RunChunk(LA, "GluePad_Mbox = nil GluePad_Mbox2 = nil if GluePad_KbPress then GluePad_Mbox = GluePad_KbPress() end", 0);
             Glue_PushGlobal(LA, "GluePad_Mbox");
             isnum = Glue_TopNumber(LA, &vkd);
+            if (isnum && vkd >= 65.0 && vkd <= 90.0)
+            {
+                Glue_PushGlobal(LA, "GluePad_Mbox2");
+                withshift = Glue_TopNumber(LA, &shd) && shd == 1.0;
+            }
         }
         if (isnum && vkd >= -1.0 && vkd <= 255.0)
         {
             /* Privacidade: NUNCA loga o VK (sequencia digitada). */
             if (vkd >= 1.0)
-                GluePad_SendKeyStamped((WORD)(int)vkd);
+            {
+                if (withshift)
+                    GluePad_SendKeyStampedWithShift((WORD)(int)vkd);
+                else
+                    GluePad_SendKeyStamped((WORD)(int)vkd);
+            }
             Glue_LogKbFoc("AKB");
             return;
         }
@@ -530,6 +543,38 @@ void Glue_ActIntent(int intent)
         tag = "X";
         break;
     case GLUEPAD_INT_B: chunk = "if GluePad_Back then GluePad_Back() end"; tag = "B"; break;
+    case GLUEPAD_INT_LB:
+        /* F13d-mom: DOWN do LB = arma shift (so com kb aberto; fora = no-op).
+         * Log posicional (foc=KB:r,c+S prova o arme, sem rotulo/VK). */
+        if (Glue_IsKbOpen())
+        {
+            GetContextFn getctxLB = (GetContextFn)GLUEPAD_ADDR_GETCONTEXT;
+            GlueL LL = getctxLB();
+            if (LL)
+                Glue_RunChunk(LL, "if GluePad_KbShift then GluePad_KbShift() end", 0);
+            Glue_LogKbFoc("LSHIFT");
+        }
+        return;
+    case GLUEPAD_INT_LBUP:
+        /* F13d-mom: UP do LB = desarma (sem log; soltar nao polui). */
+        {
+            GetContextFn getctxLU = (GetContextFn)GLUEPAD_ADDR_GETCONTEXT;
+            GlueL LU = getctxLU();
+            if (LU)
+                Glue_RunChunk(LU, "if GluePad_KbUnshift then GluePad_KbUnshift() end", 0);
+        }
+        return;
+    case GLUEPAD_INT_RB:
+        /* F13d-Deck: RB = toggle ABC/123 (so com kb aberto; fora = no-op). */
+        if (Glue_IsKbOpen())
+        {
+            GetContextFn getctxRB = (GetContextFn)GLUEPAD_ADDR_GETCONTEXT;
+            GlueL LR = getctxRB();
+            if (LR)
+                Glue_RunChunk(LR, "if GluePad_KbToggle then GluePad_KbToggle() end", 0);
+            Glue_LogKbFoc("RTOG");
+        }
+        return;
     case GLUEPAD_INT_DUMP:
         /* F13b-XY: com o painel aberto, Y = espaco (convencao Steam);
          * fechado, Y = foto (dump). */
