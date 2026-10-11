@@ -1899,9 +1899,80 @@ function GluePad_Activate()
     if f.Click then
       f:Click()
     end
+    -- F14-keepsel: clique na fileira de chars e so selecao (a tela nao
+    -- muda) - mantem o foco em vez de desarmar. Sem isso, o proximo A
+    -- reconstroi do zero no char 1 em vez de continuar no focado.
+    if g.mode == "char" and g.order ~= nil and
+       g.order[g.zi] == "PERSONAGENS" then
+      show(cur())
+      return
+    end
     -- F11-B: o click pode reembaralhar/trocar a tela - desarma em vez de
     -- rezonar velho (proximo toque constroi do zero, sem fantasma).
     GluePad_Disarm()
+  end
+end
+
+-- F14-holdA: fileira de chars focada? (Mbox 1/nil p/ o C armar o timer
+-- do A segurado. So vale em char sem dialogo/kb; resto = nil = A normal.)
+function GluePad_CharRow()
+  local g = GluePad
+  if not g.ready or g.mode ~= "char" then
+    return
+  end
+  if g.dlg ~= nil or g.kb ~= nil then
+    return
+  end
+  if g.order == nil or g.zones == nil then
+    return
+  end
+  if g.order[g.zi] ~= "PERSONAGENS" then
+    return
+  end
+  local z = g.zones["PERSONAGENS"]
+  if z == nil or z[g.ii] == nil then
+    return
+  end
+  GluePad_Mbox = 1
+end
+
+-- F14-holdA: entra no mundo com o char focado (seleciona o focado e
+-- clica EnterWorld; guards de modo/dialogo herdados do padrao).
+function GluePad_EnterWorld()
+  local g = GluePad
+  if not g.ready or g.mode ~= "char" then
+    return
+  end
+  if g.dlg ~= nil then
+    return
+  end
+  if g.order ~= nil and g.order[g.zi] == "PERSONAGENS" then
+    local it = cur()
+    if it ~= nil then
+      local f = it.ref
+      if f.Click then
+        f:Click()
+      end
+    end
+  end
+  local az = nil
+  if g.zones ~= nil then
+    az = g.zones["ACOES"]
+  end
+  if az == nil then
+    return
+  end
+  local i = 1
+  while i <= table.getn(az) do
+    if string.find(az[i].nm, "EnterWorld") then
+      local f = az[i].ref
+      if f.Click then
+        f:Click()
+      end
+      GluePad_Disarm()
+      return
+    end
+    i = i + 1
   end
 end
 

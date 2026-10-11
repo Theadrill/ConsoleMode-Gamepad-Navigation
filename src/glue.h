@@ -20,6 +20,9 @@ void Glue_PostSync(void);
 #define GLUEPAD_TIMER_REPEAT 0x4744u
 #define GLUEPAD_HOLD_DELAY_MS 350
 #define GLUEPAD_HOLD_RATE_MS 110
+/* F14-holdA: A segurado 250ms na fileira entra no mundo (one-shot). */
+#define GLUEPAD_TIMER_AHOLD 0x4745u
+#define GLUEPAD_AHOLD_MS 250
 void Glue_RepeatStart(HWND hwnd, int intent);
 void Glue_RepeatStop(void);
 

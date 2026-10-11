@@ -227,6 +227,8 @@ static void Glue_DoProbes(void)
 static int s_repeatOn = 0;
 static int s_repeatIntent = -1;
 static HWND s_repeatHwnd = NULL;
+/* F14-holdA: timer do A segurado (one-shot; hook escreve, main consome). */
+static int s_aholdOn = 0;
 
 void Glue_RepeatStart(HWND hwnd, int intent)
 {
@@ -247,6 +249,9 @@ void Glue_RepeatStop(void)
     s_repeatIntent = -1;
     s_repeatHwnd = NULL;
 }
+
+/* F7-diag: Glue_CallL definido abaixo (o timer F14 o usa antes). */
+static int Glue_CallL(const char *tag, const char *chunk);
 
 LRESULT CALLBACK Glue_WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 {
@@ -273,6 +278,20 @@ LRESULT CALLBACK Glue_WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         }
         else
             Glue_RepeatStop();
+        return 0;
+    }
+    /* F14-holdA: A segurado na fileira entra no mundo (one-shot).
+     * Solta na risca do timer = toque (seleciona); segurado = entra.
+     * Mundo = silencio (sem timer pendente vazando p/ o jogo). */
+    if (msg == WM_TIMER && wp == GLUEPAD_TIMER_AHOLD)
+    {
+        int was = s_aholdOn;
+        KillTimer(hwnd, GLUEPAD_TIMER_AHOLD);
+        s_aholdOn = 0;
+        /* Sem pendencia (a solta matou o timer; timer velho) = silencio.
+         * Com pendencia = A segue segurado = entra no mundo. */
+        if (was && GluePad_IsOnGlue())
+            Glue_CallL("ENTER", "if GluePad_EnterWorld then GluePad_EnterWorld() end");
         return 0;
     }
     /* F12-sync: vigia 250ms, hide-only, sem log (chunk blindado). */
@@ -450,6 +469,26 @@ void Glue_BootNav(void)
     GetContextFn getctx = (GetContextFn)GLUEPAD_ADDR_GETCONTEXT;
     GlueL L;
     int rc;
+    /* F14-restate: entrar no mundo recria o glue state e as defs somem;
+     * sem o helper, tudo vira no-op silencioso (Screen FAIL, foco vazio).
+     * Sonda barata a cada boot: sem GluePad_Boot, redefine. */
+    {
+        double v = 0.0;
+        int have = 0;
+        DWORD chk = 0;
+        if (GluePad_ReadU32(GLUEPAD_ADDR_GETCONTEXT, &chk))
+        {
+            L = getctx();
+            if (L)
+            {
+                Glue_RunChunk(L, "GluePad_Mbox = nil if GluePad_Boot then GluePad_Mbox = 1 end", 0);
+                Glue_PushGlobal(L, "GluePad_Mbox");
+                have = Glue_TopNumber(L, &v) && v == 1.0;
+            }
+        }
+        if (!have)
+            s_bootDone = 0;
+    }
     /* F3b: defs uma vez; boot-check a CADA intent (Lua decide: mesma
      * tela = re-mostra, outra = reconstroi, desconhecida = desarma).
      * Sem isso, A clicaria zona stale apos trocar login<->char. */
@@ -478,6 +517,36 @@ void Glue_BootNav(void)
     }
 }
 
+/* F14-holdA: fileira de chars focada? (Mbox 1/nil via CharRow). */
+static int Glue_IsCharRow(void)
+{
+    GetContextFn getctx = (GetContextFn)GLUEPAD_ADDR_GETCONTEXT;
+    GlueL L = getctx();
+    double v = 0.0;
+    if (!L)
+        return 0;
+    Glue_RunChunk(L, "GluePad_Mbox = nil if GluePad_CharRow then GluePad_CharRow() end", 0);
+    Glue_PushGlobal(L, "GluePad_Mbox");
+    return Glue_TopNumber(L, &v) && v == 1.0;
+}
+
+static void Glue_AHoldStart(void)
+{
+    HWND h = Glue_GetHwnd();
+    if (h == NULL || s_aholdOn)
+        return;
+    s_aholdOn = 1;
+    SetTimer(h, GLUEPAD_TIMER_AHOLD, GLUEPAD_AHOLD_MS, NULL);
+}
+
+static void Glue_AHoldStop(void)
+{
+    HWND h = Glue_GetHwnd();
+    if (s_aholdOn && h != NULL)
+        KillTimer(h, GLUEPAD_TIMER_AHOLD);
+    s_aholdOn = 0;
+}
+
 void Glue_ActIntent(int intent)
 {
     const char *chunk = NULL;
@@ -493,6 +562,13 @@ void Glue_ActIntent(int intent)
     case GLUEPAD_INT_RIGHT: chunk = "if GluePad_Move then GluePad_Move(\"RIGHT\") end"; tag = "RIGHT"; break;
     case GLUEPAD_INT_A:
     {
+        /* F14-holdA: A na fileira de chars arma o timer (toque = mostra,
+         * segurado 250ms = entra no mundo). Resto segue o caminho normal. */
+        if (Glue_IsCharRow())
+        {
+            Glue_AHoldStart();
+            return;
+        }
         /* F13b: A no teclado virtual. KbPress decide (numero = VK p/
          * SendInput carimbado; -1 = tratado no Lua; nil = Activate).
          * F13d-mom: Mbox2 = 1 = LB segurado no ato (letra maiuscula). */
@@ -543,6 +619,17 @@ void Glue_ActIntent(int intent)
         tag = "X";
         break;
     case GLUEPAD_INT_B: chunk = "if GluePad_Back then GluePad_Back() end"; tag = "B"; break;
+    case GLUEPAD_INT_AUP:
+        /* F14-holdA: solta com timer pendente = toque (seleciona o char).
+         * Sem timer (A normal ou timer ja disparou) = ignora. */
+        if (s_aholdOn)
+        {
+            Glue_AHoldStop();
+            chunk = "if GluePad_Activate then GluePad_Activate() end";
+            tag = "A";
+            break;
+        }
+        return;
     case GLUEPAD_INT_LB:
         /* F13d-mom: DOWN do LB = arma shift (so com kb aberto; fora = no-op).
          * Log posicional (foc=KB:r,c+S prova o arme, sem rotulo/VK). */
@@ -683,6 +770,7 @@ void Glue_TriggerProbe(void)
 void Glue_Uninstall(void)
 {
     Glue_RepeatStop();
+    Glue_AHoldStop();
     if (s_hwnd && s_old)
         SetWindowLongA(s_hwnd, GWL_WNDPROC, (LONG)s_old);
     s_hwnd = NULL;
