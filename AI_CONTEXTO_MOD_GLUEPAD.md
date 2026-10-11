@@ -91,6 +91,22 @@ Usuário joga com Steam Input (pad→teclado/mouse virtual). Sem filtro = ação
 4. `gluepad.lua` passa em `luac50 -p` antes de qualquer teste.
 5. Sem commit, sem push antes da aprovação da fase. Push só quando o usuário pedir, uma vez só.
 6. Outro agente atua no repo-irmão ConsoleModeVanilla — NÃO tocar nele daqui; ponto de sincronia: a DLL dorme in-game, o addon nunca mexe em glue.
+7. **Skills obrigatórias:** antes e durante cada fase, carregar via `skill` tool as skills de `.opencode/skills/` conforme a seção 8b. Não codar "de cabeça" o que uma skill cobre.
+
+## 8b. Skills do projeto (`.opencode/skills/` — USO OBRIGATÓRIO)
+
+Instaladas via curadoria de `C:\PROJETOS\claude-skills-collection` (índice — o conteúdo real veio dos repos-fonte). Carregar a skill **antes** da tarefa correspondente:
+
+* `diagnosing-bugs` — loop de diagnóstico de bug difícil/crash/regressão. Aqui o feedback loop = `build.bat` + `luac50 -p` + ritual in-game (o usuário no jogo é o "humano no loop"). Fases: loop→reproduz→minimiza→3-5 hipóteses falsificáveis (mostrar ao usuário antes de testar)→instrumenta (logs marcados `[DEBUG-xxx]`, remover no fim)→fix+regressão→cleanup.
+* `root-cause-tracing` — NUNCA corrigir só onde o erro aparece; rastrear a cadeia até o gatilho original e corrigir na fonte (+ defesa em profundidade). Padrão dos nossos post-mortems (crashs F2a, apagão do Boot, magenta duplo).
+* `incremental-implementation` — fatias finas verticais, 1 coisa por vez, build+testes verdes a cada fatia, sem "limpeza" fora do escopo. Espelha as fases F com parada p/ validação.
+* `source-driven-development` — decisão ancorada em fonte primária, nunca em memória: mesma regra do "não re-derivar" (endereços provados por disassembly, Interact/OctoLogin como referência). O que não der p/ verificar, marcar `UNVERIFIED` explícito.
+* `executing-plans` — disciplina de ledger + rulings + contrato de conclusão ao executar cada fase.
+* `handoff` — compactar a sessão p/ outro agente continuar (só sob pedido; ver ressalva).
+
+**Ressalvas (particularidades — não quebrar):**
+1. `executing-plans` referencia skills-irmãs NÃO instaladas (`test-driven-development`, `subagent-driven-development`, `using-git-worktrees`, `requesting-code-review`, `finishing-a-development-branch`) e scripts bash (`scripts/task-start`, `task-done`) sem equivalente Windows. Usar dele SÓ a disciplina (ledger por fase, `Ruling: <decisão> — <porquê> — <custo se errado>`, contrato de conclusão, review final); NUNCA tentar rodar os scripts nem fabricar as skills ausentes. O "teste que falha antes e passa depois" aqui = build+smoke+ritual in-game com evidência lida no log.
+2. `handoff` vem com `disable-model-invocation: true` — NÃO aparece na lista automática; carrega SÓ por pedido explícito do usuário, e o documento vai p/ `%TEMP%` (nunca no workspace/repo).
 
 ---
 
@@ -132,6 +148,7 @@ Usuário joga com Steam Input (pad→teclado/mouse virtual). Sem filtro = ação
 5. Identidade Vanilla intocável; sem hold (1 toque, risco assumido); B nunca quita no login.
 6. Steam Input bypass só em glue (hooks INJECTED + `dwExtraInfo`); in-game intocado.
 7. Parada por fase para validação in-game antes de commit.
+8. Skills de `.opencode/skills/` são OBRIGATÓRIAS (seção 8b) — carregar a correspondente antes de cada tarefa; respeitar as 2 ressalvas (`executing-plans` sem scripts/irmãs, `handoff` só sob pedido).
 
 #### Modo de operação
 A IA **coda diretamente** (C + Lua do helper), fase a fase (F0–F5), valida o próprio trabalho (build + smoke + roteiro) e passa ao usuário o que é esperado acontecer no jogo para ele validar. Sem commit, sem push antes da aprovação.
