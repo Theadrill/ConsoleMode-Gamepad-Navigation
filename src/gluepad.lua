@@ -716,6 +716,8 @@ local function kbclose(g)
     pcall(function() g.kb.panel:Hide() end)
   end
   g.kb = nil
+  -- F13c: fecha sem rastro (a mailbox nao guarda o ultimo VK).
+  GluePad_Mbox = nil
 end
 
 local function kbcursor(g)
