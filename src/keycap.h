@@ -20,7 +20,7 @@
  * Nossas teclas futuras saem carimbadas; as do Steam, nao. */
 #define GLUEPAD_EXTRAINFO ((ULONG_PTR)0x47503132UL) /* "GP12" ASCII */
 
-/* Intents de navegacao (X engolido sem intent: reservado; Y = dump). */
+/* Intents de navegacao (Y = dump; X = toggle ABC/123 do teclado F13b). */
 #define GLUEPAD_INT_UP    0
 #define GLUEPAD_INT_DOWN  1
 #define GLUEPAD_INT_LEFT  2
@@ -29,6 +29,7 @@
 #define GLUEPAD_INT_B     5
 #define GLUEPAD_INT_BOOT  6
 #define GLUEPAD_INT_DUMP  7
+#define GLUEPAD_INT_X     8
 
 int KeyCap_Install(HINSTANCE hinst);
 void KeyCap_Uninstall(void);

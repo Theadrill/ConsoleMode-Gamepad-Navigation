@@ -25,8 +25,8 @@ static DWORD s_lastProbe = 0;
 static DWORD s_lastSync = 0;
 
 /* Helper do futuro: tecla sintetizada pela DLL, ja carimbada.
- * Nao chamado em F1 (F1 so loga). Mantido compilado para a F4. */
-static void GluePad_SendKeyStamped(WORD vk)
+ * F13b: em uso (A no teclado virtual). NUNCA logar o vk. */
+void GluePad_SendKeyStamped(WORD vk)
 {
     INPUT in;
     INPUT out;

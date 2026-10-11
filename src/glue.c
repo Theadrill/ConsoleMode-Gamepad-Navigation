@@ -308,6 +308,17 @@ HWND Glue_GetHwnd(void)
     return s_hwnd;
 }
 
+/* F13b: le numero do topo (VK do KbPress); 0 se nao-numero. */
+static int Glue_TopNumber(GlueL L, double *out)
+{
+    unsigned char slot[16];
+    int tt = Glue_TopTT(L, slot);
+    if (tt != GLUEPAD_TT_NUMBER)
+        return 0;
+    memcpy(out, slot + 8, 8);
+    return 1;
+}
+
 /* Le string curta do topo (pos-pushglobal de string); "" se nao-string. */
 static void Glue_TopShortStr(GlueL L, char *out, unsigned cap)
 {
@@ -447,7 +458,42 @@ void Glue_ActIntent(int intent)
     case GLUEPAD_INT_DOWN: chunk = "if GluePad_Move then GluePad_Move(\"DOWN\") end"; tag = "DOWN"; break;
     case GLUEPAD_INT_LEFT: chunk = "if GluePad_Move then GluePad_Move(\"LEFT\") end"; tag = "LEFT"; break;
     case GLUEPAD_INT_RIGHT: chunk = "if GluePad_Move then GluePad_Move(\"RIGHT\") end"; tag = "RIGHT"; break;
-    case GLUEPAD_INT_A: chunk = "if GluePad_Activate then GluePad_Activate() end"; tag = "A"; break;
+    case GLUEPAD_INT_A:
+    {
+        /* F13b: A no teclado virtual. KbPress decide (numero = VK p/
+         * SendInput carimbado; -1 = tratado no Lua; nil = Activate). */
+        GetContextFn getctxA = (GetContextFn)GLUEPAD_ADDR_GETCONTEXT;
+        GlueL LA = getctxA();
+        double vkd = 0.0;
+        int isnum = 0;
+        if (LA)
+        {
+            Glue_RunChunk(LA, "GluePad_Mbox = nil if GluePad_KbPress then GluePad_Mbox = GluePad_KbPress() end", 0);
+            Glue_PushGlobal(LA, "GluePad_Mbox");
+            isnum = Glue_TopNumber(LA, &vkd);
+        }
+        if (isnum && vkd >= -1.0 && vkd <= 255.0)
+        {
+            char fbuf[64];
+            char line[128];
+            int rc2;
+            /* Privacidade: NUNCA loga o VK (sequencia digitada). */
+            if (vkd >= 1.0)
+                GluePad_SendKeyStamped((WORD)(int)vkd);
+            rc2 = Glue_RunChunk(LA, "if GluePad_FocusName then GluePad_Mbox = GluePad_FocusName() end", 0);
+            Glue_PushGlobal(LA, "GluePad_Mbox");
+            Glue_TopShortStr(LA, fbuf, 60);
+            wsprintfA(line, "GluePad F2 nav AKB rc=%d foc=%s\r\n", rc2, fbuf);
+            GluePad_LogRaw(line);
+        }
+        else
+        {
+            chunk = "if GluePad_Activate then GluePad_Activate() end";
+            tag = "A";
+        }
+        break;
+    }
+    case GLUEPAD_INT_X: chunk = "if GluePad_KbToggle then GluePad_KbToggle() end"; tag = "X"; break;
     case GLUEPAD_INT_B: chunk = "if GluePad_Back then GluePad_Back() end"; tag = "B"; break;
     case GLUEPAD_INT_DUMP:
     {

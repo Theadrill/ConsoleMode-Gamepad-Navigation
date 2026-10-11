@@ -692,7 +692,7 @@ end
 -- Layout aprovado: 3 fileiras de letras + fileira [esp][del][ABC/123][OK].
 -- Modo 123 existe como dado (a troca vem na F13b com INT_X).
 local KB_ROWS_ABC = { "QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM" }
-local KB_ROWS_123 = { "1234567890", "-/:;()$&@.", ",?!'#%*+_" }
+local KB_ROWS_123 = { "1234567890", "-/:;()$&@", ",?!'#%*" }
 local KB_FUNCS = { "esp", "del", "ABC/123", "OK" }
 local KB_KW = 44
 local KB_KH = 36
@@ -709,20 +709,6 @@ local function kbrows(mode)
     return KB_ROWS_123
   end
   return KB_ROWS_ABC
-end
-
-local function kbkeylabel(g)
-  if g.kb == nil then
-    return nil
-  end
-  if g.kb.r <= 3 then
-    local row = kbrows(g.kb.mode)[g.kb.r]
-    if g.kb.c <= string.len(row) then
-      return string.sub(row, g.kb.c, g.kb.c)
-    end
-    return "?"
-  end
-  return KB_FUNCS[g.kb.c]
 end
 
 local function kbclose(g)
@@ -774,19 +760,19 @@ end
 
 -- Cascata de fonte (1o passo que passa no kbcheck vence):
 -- 1=GameFontNormal, 2=GameFontNormalSmall, 3=FRIZQT 14, 4=FRIZQT 12.
--- Retorna o passo ou 0. Leitura GetText = nosso rotulo (nunca EditBox).
+-- Retorna passo + FontString vencedora (p/ re-rotular no toggle F13b).
 local function kbsetlabel(key, label)
   local okf, fs = pcall(function()
     return key:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   end)
   if okf and fs ~= nil and kbcheck(key, fs, label) then
-    return 1
+    return 1, fs
   end
   local ok2, fs2 = pcall(function()
     return key:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
   end)
   if ok2 and fs2 ~= nil and kbcheck(key, fs2, label) then
-    return 2
+    return 2, fs2
   end
   local ok3, fs3 = pcall(function()
     return key:CreateFontString(nil, "OVERLAY")
@@ -803,12 +789,12 @@ local function kbsetlabel(key, label)
         fs3:SetFont("Fonts\\FRIZQT__.TTF", px)
       end)
       if okf2 and kbcheck(key, fs3, label) then
-        return step
+        return step, fs3
       end
       sz = sz - 2
     end
   end
-  return 0
+  return 0, nil
 end
 
 -- Constroi o painel UMA vez (cache global: defs roda 2x por processo,
@@ -840,9 +826,11 @@ local function kbbuild(g, field)
     panel:Show()
   end)
   local keys = {}
+  local lab = {}
   local r = 1
   while r <= 4 do
     keys[r] = {}
+    lab[r] = {}
     local n = 0
     if r <= 3 then
       n = string.len(rows[r])
@@ -878,6 +866,7 @@ local function kbbuild(g, field)
       local knm = "GluePadKB_" .. tostring(r) .. "_" .. tostring(c)
       local okk, key = pcall(CreateFrame, "Frame", knm, panel)
       if okk and key ~= nil then
+        local fs = nil
         pcall(function()
           key:SetWidth(kw)
           key:SetHeight(KB_KH)
@@ -887,20 +876,22 @@ local function kbbuild(g, field)
           t:ClearAllPoints()
           t:SetAllPoints(key)
           key:SetPoint("TOPLEFT", panel, "TOPLEFT", x, -y)
-          local st = kbsetlabel(key, label)
+          local st, fw = kbsetlabel(key, label)
           if st > 0 and GluePad._kbfont == nil then
             GluePad._kbfont = st
           end
+          fs = fw
           key:Show()
         end)
         keys[r][c] = key
+        lab[r][c] = fs
       end
       x = x + kw + KB_GAP
       c = c + 1
     end
     r = r + 1
   end
-  g.kb = { mode = "ABC", r = 1, c = 1, keys = keys, panel = panel }
+  g.kb = { mode = "ABC", r = 1, c = 1, keys = keys, lab = lab, panel = panel }
   kbcursor(g)
   return true
 end
@@ -911,18 +902,18 @@ local function kbopen(g, field)
     return
   end
   local cx = GluePad._kbcache
-  if cx ~= nil and cx.panel ~= nil and cx.keys ~= nil then
+  if cx ~= nil and cx.panel ~= nil and cx.keys ~= nil and cx.lab ~= nil then
     pcall(function()
       cx.panel:ClearAllPoints()
       cx.panel:SetPoint("BOTTOM", field, "TOP", 0, 12)
       cx.panel:Show()
     end)
-    g.kb = { mode = "ABC", r = 1, c = 1, keys = cx.keys, panel = cx.panel }
+    g.kb = { mode = "ABC", r = 1, c = 1, keys = cx.keys, lab = cx.lab, panel = cx.panel }
     kbcursor(g)
     return
   end
   if kbbuild(g, field) then
-    GluePad._kbcache = { keys = g.kb.keys, panel = g.kb.panel }
+    GluePad._kbcache = { keys = g.kb.keys, lab = g.kb.lab, panel = g.kb.panel }
   end
 end
 
@@ -994,6 +985,82 @@ local function kbmove(g, dir)
   kbcursor(g)
 end
 
+-- F13b: alterna ABC/123 no painel (X). Re-rotula com as fileiras do
+-- modo novo (mesmos comprimentos por construcao); cursor preservado.
+function GluePad_KbToggle()
+  local g = GluePad
+  if g.kb == nil or g.kb.lab == nil then
+    return
+  end
+  local nm = "123"
+  if g.kb.mode == "123" then
+    nm = "ABC"
+  end
+  local rows = kbrows(nm)
+  local r = 1
+  while r <= 3 do
+    local row = rows[r]
+    local c = 1
+    while c <= string.len(row) do
+      local t = nil
+      if g.kb.lab[r] ~= nil then
+        t = g.kb.lab[r][c]
+      end
+      if t ~= nil then
+        local lb = string.sub(row, c, c)
+        pcall(function() t:SetText(lb) end)
+      end
+      c = c + 1
+    end
+    r = r + 1
+  end
+  g.kb.mode = nm
+  kbcursor(g)
+end
+
+-- F13b: A no painel. Retorna VK (numero) p/ a DLL enviar carimbado,
+-- -1 = tratado aqui (OK fecha, ABC/123 alterna, resto no-op),
+-- nil = sem painel (a DLL segue o Activate normal).
+-- Nunca le texto do campo; rotulo e DADO nosso.
+function GluePad_KbPress()
+  local g = GluePad
+  if g.kb == nil then
+    return nil
+  end
+  local r = g.kb.r
+  local c = g.kb.c
+  if r == 4 then
+    local f = KB_FUNCS[c]
+    if f == "esp" then
+      return 32
+    end
+    if f == "del" then
+      return 8
+    end
+    if f == "ABC/123" then
+      GluePad_KbToggle()
+      return -1
+    end
+    if f == "OK" then
+      kbclose(g)
+      show(cur())
+      return -1
+    end
+    return -1
+  end
+  local row = kbrows(g.kb.mode)[r]
+  if row == nil or c > string.len(row) then
+    return -1
+  end
+  local b = string.byte(string.sub(row, c, c))
+  -- Letras (0x41-0x5A) e digitos (0x30-0x39) = wVk direto, sem shift
+  -- (minusculas; shift vem na F13d). Simbolos: no-op na F13b.
+  if (b >= 65 and b <= 90) or (b >= 48 and b <= 57) then
+    return b
+  end
+  return -1
+end
+
 -- F7-diag: nome do foco atual (so nomes de frame; p/ calibrar o espacial).
 function GluePad_FocusName()
   local g = GluePad
@@ -1004,13 +1071,9 @@ function GluePad_FocusName()
     end
     return "dlg?"
   end
-  -- F13a: cursor do teclado (nunca zona; nunca texto do campo).
+  -- F13b: cursor posicional (nunca o rotulo: nao vaza a digitacao).
   if g.kb ~= nil then
-    local lb = kbkeylabel(g)
-    if lb ~= nil then
-      return "KB:" .. lb
-    end
-    return "KB:?"
+    return "KB:" .. tostring(g.kb.r) .. "," .. tostring(g.kb.c)
   end
   local it = cur()
   if it ~= nil and it.nm ~= nil then
@@ -1717,19 +1780,16 @@ function GluePad_Dump()
     out[m] = it.t .. "|" .. it.nm .. "|1|1|" .. tostring(it.tp) .. "|" .. tostring(it.lf) .. ";"
     i = i + 1
   end
-  -- F13a: estado do painel (modo + cursor; teclas Frame nao entram no
-  -- collect - a ausencia de GluePadKB aqui prova a exclusao).
+  -- F13b: estado posicional (modo + fileira,coluna + passo da fonte;
+  -- nunca rotulo: nao vaza a digitacao).
   local kbstr = "-"
   if GluePad.kb ~= nil then
-    local lb = kbkeylabel(GluePad)
-    if lb == nil then
-      lb = "?"
-    end
     local ff = 0
     if GluePad._kbfont ~= nil then
       ff = GluePad._kbfont
     end
-    kbstr = GluePad.kb.mode .. ":" .. lb .. " f" .. tostring(ff)
+    kbstr = GluePad.kb.mode .. " " .. tostring(GluePad.kb.r) .. "," ..
+            tostring(GluePad.kb.c) .. " f" .. tostring(ff)
   end
   return "SCR=" .. GluePad_Screen() .. " N=" .. tostring(n) .. " KB=" .. kbstr .. " " .. table.concat(out, "")
 end

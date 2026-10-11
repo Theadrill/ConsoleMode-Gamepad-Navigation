@@ -8,6 +8,7 @@ static HHOOK g_hook = NULL;
 static int s_aDown = 0;
 static int s_bDown = 0;
 static int s_yDown = 0;
+static int s_xDown = 0;
 static int s_nohwndLogged = 0;
 /* F8-hold: bit por direcao (intent 0-3); down repetido nao re-posta. */
 static DWORD s_heldDirs = 0;
@@ -29,7 +30,8 @@ int KeyCap_IntentForVk(DWORD vk)
     if (vk == (DWORD)GLUEPAD_VK_A) return GLUEPAD_INT_A;
     if (vk == (DWORD)GLUEPAD_VK_B) return GLUEPAD_INT_B;
     if (vk == (DWORD)GLUEPAD_VK_Y) return GLUEPAD_INT_DUMP;
-    return -1; /* X e resto: sem intent */
+    if (vk == (DWORD)GLUEPAD_VK_X) return GLUEPAD_INT_X;
+    return -1; /* resto: sem intent */
 }
 
 /* F2b-2: bypass de teclado em glue. Engole TODA injetada (o storm
@@ -82,6 +84,12 @@ static LRESULT CALLBACK KeyCap_Proc(int nCode, WPARAM wParam, LPARAM lParam)
                     if (down && !s_yDown) { s_yDown = 1; post = 1; }
                     if (!down) s_yDown = 0;
                 }
+                else if (k->vkCode == (DWORD)GLUEPAD_VK_X)
+                {
+                    /* F13b: toggle ABC/123 com edge (segurar nao repete). */
+                    if (down && !s_xDown) { s_xDown = 1; post = 1; }
+                    if (!down) s_xDown = 0;
+                }
                 else if (intent >= 0 && intent <= 3)
                 {
                     /* F8-hold: borda posta 1x e arma o timer; o timer
@@ -117,6 +125,7 @@ static LRESULT CALLBACK KeyCap_Proc(int nCode, WPARAM wParam, LPARAM lParam)
             if (k->vkCode == (DWORD)GLUEPAD_VK_A) s_aDown = 0;
             if (k->vkCode == (DWORD)GLUEPAD_VK_B) s_bDown = 0;
             if (k->vkCode == (DWORD)GLUEPAD_VK_Y) s_yDown = 0;
+            if (k->vkCode == (DWORD)GLUEPAD_VK_X) s_xDown = 0;
             /* Solta do D-pad fora do glue tambem para o repeat. */
             {
                 int ii = KeyCap_IntentForVk(k->vkCode);

@@ -92,3 +92,13 @@ telas antigas com o código novo instalado.
 2. Diálogo no meio da digitação (mitigação: fecha junto no `Disarm`).
 3. Acentos/case (validar na criação, campo visível e seguro).
 4. Hold segurando A não pode repetir digitação (edge puro por construção).
+
+## Pendente Steam Deck (revisitar — perguntar na troca de fases)
+
+- LB/RB físicos chegam como teclas virtuais do Steam, mas os códigos
+  exatos (`key vk=` no log) ainda não foram capturados porque o Deck
+  está guardado. Por isso a F13 usa só X (toggle ABC/123) e Y (dump).
+- Quando o usuário estiver no Deck: apertar LB/RB no glue, ler o `vk`
+  no log e mapear (candidato: toggle de caps/shift).
+- A IA deve PERGUNTAR sobre isso a cada troca de fase (b→c, c→d, d→e)
+  até estar resolvido ou ser explicitamente descartado.

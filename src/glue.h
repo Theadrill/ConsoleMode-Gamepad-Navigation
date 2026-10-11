@@ -39,6 +39,11 @@ void Glue_BootNav(void);
 /* Executa um intent (main thread). Chunks blindados: no-op sem helper. */
 void Glue_ActIntent(int intent);
 
+/* F13b: tecla sintetizada carimbada (dwExtraInfo proprio; o hook deixa
+ * passar). Down+up imediato; A nao repete (edge), hold nao digita duplo.
+ * Def. em dllmain.c. NUNCA logar o vk (sequencia digitada). */
+void GluePad_SendKeyStamped(WORD vk);
+
 /* Restaura a janela no unload. */
 void Glue_Uninstall(void);
 
