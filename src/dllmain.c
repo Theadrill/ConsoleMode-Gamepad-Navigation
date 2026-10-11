@@ -22,6 +22,7 @@ static HANDLE g_thread = NULL;
 static HINSTANCE g_hInst = NULL;
 static DWORD s_lastDiag = 0;
 static DWORD s_lastProbe = 0;
+static DWORD s_lastSync = 0;
 
 /* Helper do futuro: tecla sintetizada pela DLL, ja carimbada.
  * Nao chamado em F1 (F1 so loga). Mantido compilado para a F4. */
@@ -122,6 +123,17 @@ static DWORD WINAPI GluePad_PollThread(LPVOID unused)
             {
                 Glue_TriggerProbe();
                 s_lastProbe = tick;
+            }
+        }
+
+        /* F12-sync 4x/seg: vigia de tela (hide-only, sem log). O gating
+         * glue-vs-mundo mora dentro do Post (mundo = silencio). */
+        {
+            DWORD tick = GetTickCount();
+            if (tick - s_lastSync >= 250)
+            {
+                Glue_PostSync();
+                s_lastSync = tick;
             }
         }
 

@@ -275,7 +275,32 @@ LRESULT CALLBACK Glue_WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
             Glue_RepeatStop();
         return 0;
     }
+    /* F12-sync: vigia 250ms, hide-only, sem log (chunk blindado). */
+    if (msg == GLUEPAD_WM_SYNC)
+    {
+        GetContextFn getctx = (GetContextFn)GLUEPAD_ADDR_GETCONTEXT;
+        DWORD chk = 0;
+        GlueL L;
+        if (GluePad_ReadU32(GLUEPAD_ADDR_GETCONTEXT, &chk))
+        {
+            L = getctx();
+            if (L)
+                Glue_RunChunk(L, "if GluePad_Sync then GluePad_Sync() end", 0);
+        }
+        return 0;
+    }
     return CallWindowProcA(s_old, hwnd, msg, wp, lp);
+}
+
+/* F12-sync: postado pelo poll 4x/seg (so em glue; mundo = silencio). */
+void Glue_PostSync(void)
+{
+    DWORD screen = 0;
+    if (!s_hwnd)
+        return;
+    if (!GluePad_ReadScreenState(&screen) || !GluePad_IsOnGlue())
+        return;
+    PostMessageA(s_hwnd, GLUEPAD_WM_SYNC, 0, 0);
 }
 
 HWND Glue_GetHwnd(void)
@@ -397,6 +422,16 @@ void Glue_BootNav(void)
     rc = Glue_RunChunk(L, "if GluePad_Screen then GluePad_Mbox = GluePad_Screen() end", 0);
     Glue_PushGlobal(L, "GluePad_Mbox");
     Glue_LogScr(L, rc);
+    /* F11-diag: estagio do anel (nocreate/noshape/edges+w+h). */
+    {
+        char sbuf[64];
+        char line[128];
+        rc = Glue_RunChunk(L, "if GluePad_RingDiag then GluePad_Mbox = GluePad_RingDiag() end", 0);
+        Glue_PushGlobal(L, "GluePad_Mbox");
+        Glue_TopShortStr(L, sbuf, 60);
+        wsprintfA(line, "GluePad F2 nav ring %s\r\n", sbuf);
+        GluePad_LogRaw(line);
+    }
 }
 
 void Glue_ActIntent(int intent)

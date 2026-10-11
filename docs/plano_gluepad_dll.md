@@ -301,6 +301,23 @@ Teste espelha o harness do OctoLogin (Wine + XInput virtual).
   (pai do botao, altura medida; click legado = fallback).
 - **F10 — Wizard de realm (PENDING VALIDACAO):** `OTHER|RealmWizard`,
   5 checks + Cancel (sem Okay). Modo OPCOES+SAIDA, B=Cancel, A escolhe.
+- **F11 — Anel de foco (validado; noring+fantasma+dup+B):** contorno ouro
+  2un via 4 texturas solidas (sem arquivo), reposicionado no show();
+  no-op se sem CreateFrame; mouse off. Cor/espessura = 2 numeros.
+  F11-diag (anel invisivel): `nav ring` por intent (nocreate/noshape/
+  edges+w+h) p/ achar o estagio que falha. PROVADO: anel APARECE (ouro
+  no password; pai = GlueParent). F11-erro (RingDiag antes de cur):
+  ordem auditada de novo, regra mantida. F11-dup (magenta duplo):
+  defs roda 2x/processo (BootNav + DoProbes) — cache do anel virou
+  GLOBAL (  `GluePad._ring`); cor de volta ao ouro. F11-B (fantasma login->char):
+  pos-clique desarma sem mostrar (`GluePad_Disarm`, A+B toda tela). F11-noring (lista de chars
+  tem selecao nativa: flag por item, so PERSONAGENS) + F11-fantasma
+  (anel global: ringhide no rebuild e na tela desconhecida).
+- **F12 — Sync 250ms (EM ANDAMENTO):** poll posta `WM_SYNC` 4x/seg (so
+  glue); main compara assinatura leve (visivel+tipo+nome) e so age se
+  mudou: troca de tela = Disarm; dialogo abriu/fechou = sync sem show
+  (mostra so se abriu sozinho). Mostrar segue 100% no toque. Sem log.
+  PROVADO in-game: fantasma de troca sem clique some em <0,5s.
 
 ## 8. Riscos e limitações aceitas
 

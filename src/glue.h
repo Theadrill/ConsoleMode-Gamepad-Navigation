@@ -8,6 +8,10 @@
 
 #define GLUEPAD_WM_PROBE (WM_APP + 7)
 #define GLUEPAD_WM_ACT (WM_APP + 8)
+/* F12-sync: vigia 250ms (hide-only, sem log). Main thread compara
+ * assinatura; so age se mudou (desarma/esconde, nunca mostra/move). */
+#define GLUEPAD_WM_SYNC (WM_APP + 9)
+void Glue_PostSync(void);
 #define GLUEPAD_CLASSNAME "GxWindowClassD3d"
 #define GLUEPAD_CLASSNAME_FALLBACK "GxWindowClass"
 

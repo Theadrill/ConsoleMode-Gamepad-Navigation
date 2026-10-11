@@ -397,8 +397,142 @@ local function czone(nm)
   return nil
 end
 
+-- F11-anel: indicador de foco (pedido do dono). 4 bordas solidas ouro
+-- (SetTexture RGBA, sem arquivo), reposicionadas no show(). Se o glue
+-- nao tiver CreateFrame, vira no-op (LockHighlight segue). Mouse off.
+-- F11-dup (pos-mortem do magenta duplo): defs roda 2x por processo
+-- (BootNav + DoProbes-ARMED) - local morre no 2o load e duplica o frame.
+-- Cache no GLOBAL sobrevive a reloads no mesmo estado.
+local function ringparent()
+  if type(UIParent) == "table" or type(UIParent) == "userdata" then
+    return UIParent
+  end
+  if type(GlueParent) == "table" or type(GlueParent) == "userdata" then
+    return GlueParent
+  end
+  return nil
+end
+
+local function ringshape()
+  local g = GluePad
+  if g._ring ~= nil then
+    return g._ring
+  end
+  local par = ringparent()
+  if par == nil then
+    g.ringstage = "noparent"
+    return nil
+  end
+  local ok, f = pcall(CreateFrame, "Frame", nil, par)
+  if not ok then
+    g.ringstage = "createfail"
+    return nil
+  end
+  if f == nil then
+    g.ringstage = "nilframe"
+    return nil
+  end
+  g.ringstage = "okframe"
+  pcall(function()
+    f:SetFrameStrata("TOOLTIP")
+    f:EnableMouse(false)
+    f:Hide()
+  end)
+  local edges = {}
+  local i = 1
+  while i <= 4 do
+    local ot, t = pcall(function()
+      local tx = f:CreateTexture(nil, "OVERLAY")
+      -- Ouro final (magenta era so diagnostico).
+      tx:SetTexture(1, 0.82, 0, 0.9)
+      tx:Hide()
+      return tx
+    end)
+    if ot and t ~= nil then
+      edges[i] = t
+    end
+    i = i + 1
+  end
+  g._ring = { f = f, e = edges }
+  if table.getn(edges) < 4 then
+    g.ringstage = "edges=" .. tostring(table.getn(edges))
+  else
+    g.ringstage = "ok"
+  end
+  return g._ring
+end
+
+local function ringshow(ref)
+  local r = ringshape()
+  if r == nil or r.f == nil then
+    return
+  end
+  if table.getn(r.e) < 4 then
+    return
+  end
+  local gw = call1(ref, "GetWidth")
+  local gh = call1(ref, "GetHeight")
+  if type(gw) ~= "number" or type(gh) ~= "number" then
+    return
+  end
+  if gw <= 0 or gh <= 0 then
+    return
+  end
+  local e = r.e
+  local ok = pcall(function()
+    e[1]:ClearAllPoints()
+    e[1]:SetPoint("BOTTOMLEFT", ref, "TOPLEFT", -2, 0)
+    e[1]:SetPoint("BOTTOMRIGHT", ref, "TOPRIGHT", 2, 0)
+    e[1]:SetHeight(2)
+    e[2]:ClearAllPoints()
+    e[2]:SetPoint("TOPLEFT", ref, "BOTTOMLEFT", -2, 0)
+    e[2]:SetPoint("TOPRIGHT", ref, "BOTTOMRIGHT", 2, 0)
+    e[2]:SetHeight(2)
+    e[3]:ClearAllPoints()
+    e[3]:SetPoint("TOPRIGHT", ref, "TOPLEFT", 0, 2)
+    e[3]:SetPoint("BOTTOMRIGHT", ref, "BOTTOMLEFT", 0, -2)
+    e[3]:SetWidth(2)
+    e[4]:ClearAllPoints()
+    e[4]:SetPoint("TOPLEFT", ref, "TOPRIGHT", 0, 2)
+    e[4]:SetPoint("BOTTOMLEFT", ref, "BOTTOMRIGHT", 0, -2)
+    e[4]:SetWidth(2)
+  end)
+  if ok then
+    pcall(function()
+      local i = 1
+      while i <= 4 do
+        e[i]:Show()
+        i = i + 1
+      end
+      r.f:Show()
+    end)
+  end
+end
+
+local function ringhide()
+  local r = GluePad._ring
+  if r == nil then
+    return
+  end
+  pcall(function()
+    local i = 1
+    while i <= 4 do
+      if r.e[i] ~= nil then
+        r.e[i]:Hide()
+      end
+      i = i + 1
+    end
+    if r.f ~= nil then
+      r.f:Hide()
+    end
+  end)
+end
+
+-- (RingDiag mora depois de cur(); ver abaixo.)
 local function show(it)
   if it == nil then
+    -- F11-fantasma2: sem foco = sem anel.
+    ringhide()
     return
   end
   local f = it.ref
@@ -411,9 +545,16 @@ local function show(it)
       f:LockHighlight()
     end
   end
+  -- F11-anel: contorno acompanha o foco (vale p/ dialogo tambem).
+  -- F11-noring: lista de chars tem selecao nativa (anel = ruido).
+  if it.noring == nil then
+    ringshow(f)
+  end
 end
 
 local function hide(it)
+  -- F11-fantasma2: esconde o anel ANTES de qualquer saida.
+  ringhide()
   if it == nil then
     return
   end
@@ -444,6 +585,30 @@ local function cur()
     return nil
   end
   return z[g.ii]
+end
+
+-- F11-diag: relata o estagio do anel (DEPOIS de cur: usa cur como upvalue).
+function GluePad_RingDiag()
+  if type(CreateFrame) ~= "function" then
+    return "nocreate"
+  end
+  local r = ringshape()
+  local st = GluePad.ringstage
+  if st == nil then
+    st = "?"
+  end
+  if r == nil then
+    return st
+  end
+  local n = table.getn(r.e)
+  local it = cur()
+  if it == nil then
+    return st .. " edges=" .. tostring(n) .. " nofocus"
+  end
+  local gw = call1(it.ref, "GetWidth")
+  local gh = call1(it.ref, "GetHeight")
+  return st .. " edges=" .. tostring(n) .. " w=" .. tostring(gw) ..
+         " h=" .. tostring(gh)
 end
 
 -- F4b: camada dialogo overlay. Botoes ^GlueDialogButton (provado: so o
@@ -545,6 +710,7 @@ function GluePad_Boot()
     local items, n = collect()
     setdlg(g, finddlg(items, n))
     findscroll(g, items, n)
+    g.sniff = GluePad_Sniff()
     if g.dlg == nil then
       show(cur())
     end
@@ -559,6 +725,8 @@ function GluePad_Boot()
   g.scrollDown = nil
   g.scrollBar = nil
   g.rowH = nil
+  -- F11-fantasma: o anel e global (nao some c/ a tela) - esconde no rebuild.
+  ringhide()
   local items, n = collect()
   local zones = nil
   local zn = nil
@@ -588,6 +756,10 @@ function GluePad_Boot()
       local it = items[i]
       local z = czone(it.nm)
       if z ~= nil and zones[z] ~= nil then
+        -- F11-noring: fileira tem selecao nativa azul (anel = ruido).
+        if z == "PERSONAGENS" then
+          it.noring = true
+        end
         zn[z] = zn[z] + 1
         zones[z][zn[z]] = it
       end
@@ -655,7 +827,8 @@ function GluePad_Boot()
       i = i + 1
     end
   else
-    -- Tela desconhecida (realm/criacao/dialogo): descoberta, sem agir.
+    -- Tela desconhecida: descoberta, sem agir (e sem anel fantasma).
+    ringhide()
     return
   end
   local k = 1
@@ -701,6 +874,7 @@ function GluePad_Boot()
   if not setdlg(g, finddlg(items, n)) then
     show(cur())
   end
+  g.sniff = GluePad_Sniff()
 end
 
 -- F7-scroll: releitura forcada (pos-scroll: o conjunto visivel mudou).
@@ -714,6 +888,115 @@ function GluePad_Rebuild()
   if g.screen == s and h ~= nil then
     g.hist = h
   end
+end
+
+-- F11-B (some o fantasma na troca): pos-clique que pode trocar de tela,
+-- some o anel e DESARMA sem mostrar (o proximo toque constroi na tela
+-- que estiver valendo). Vale p/ A e B, toda tela.
+function GluePad_Disarm()
+  local g = GluePad
+  ringhide()
+  g.ready = nil
+  g.zones = nil
+  g.order = nil
+  g.mode = nil
+  g.screen = nil
+  g.dlg = nil
+  g.hist = {}
+  g.sniff = nil
+end
+
+-- F12-sync: assinatura leve (visivel+tipo+nome, sem posicao) p/ farejar
+-- mudanca a 4Hz. collect() completo so quando muda (via Sync).
+function GluePad_Sniff()
+  if GlueParent == nil then
+    return "?"
+  end
+  local parts = {}
+  local m = 0
+  local cap = 300
+  local function rec(c)
+    if m >= cap then
+      return
+    end
+    local vs = call1(c, "IsVisible")
+    if vs ~= 1 then
+      return
+    end
+    local t = call1(c, "GetObjectType")
+    if t ~= "Button" and t ~= "EditBox" and t ~= "CheckButton" then
+      return
+    end
+    local nm = framename(c)
+    if nm == nil then
+      nm = "?"
+    end
+    m = m + 1
+    parts[m] = t .. "|" .. nm .. ";"
+  end
+  local function walk(f, depth)
+    if m >= cap or depth > 6 then
+      return
+    end
+    if type(f.GetChildren) ~= "function" then
+      return
+    end
+    local ok, kids = pcall(function() local t = { f:GetChildren() }; return t end)
+    if not ok or type(kids) ~= "table" then
+      return
+    end
+    local i = 1
+    while kids[i] ~= nil do
+      local c = kids[i]
+      if type(c) == "table" or type(c) == "userdata" then
+        rec(c)
+        walk(c, depth + 1)
+      end
+      i = i + 1
+    end
+  end
+  walk(GlueParent, 0)
+  return table.concat(parts)
+end
+
+-- F12-sync (vigia 250ms, hide-only, sem log): reage a troca SEM clique
+-- (dialogo que fecha sozinho, auth com delay). Nunca move foco; mostrar
+-- so no dialogo que ABRIU sozinho (foco nativo existe). Silencio total.
+function GluePad_Sync()
+  local g = GluePad
+  if not g.ready then
+    return
+  end
+  local sig = GluePad_Sniff()
+  if sig == g.sniff then
+    return
+  end
+  g.sniff = sig
+  local scr = GluePad_Screen()
+  if scr ~= g.screen then
+    GluePad_Disarm()
+    return
+  end
+  local items, n = collect()
+  local dlg = finddlg(items, n)
+  if dlg ~= nil then
+    if g.dlg == nil then
+      g.dlg = dlg
+      g.dlgii = 1
+    else
+      g.dlg = dlg
+      if g.dlgii > table.getn(dlg) then
+        g.dlgii = 1
+      end
+    end
+    showdlg(g)
+  else
+    if g.dlg ~= nil then
+      g.dlg = nil
+      ringhide()
+    end
+  end
+  findscroll(g, items, n)
 end
 
 -- F6c: LEFT/RIGHT espacial (pedido do dono: ir p/ o lado certo, nao
@@ -906,6 +1189,7 @@ function GluePad_Back()
         f:Click()
       end
     end
+    GluePad_Disarm()
     return
   end
   -- F10-wizard: B = Cancel (sai da sugestao).
@@ -921,6 +1205,7 @@ function GluePad_Back()
             if f.Click then
               f:Click()
             end
+            GluePad_Disarm()
             return
           end
           i = i + 1
@@ -943,6 +1228,7 @@ function GluePad_Back()
             if f.Click then
               f:Click()
             end
+            GluePad_Disarm()
             return
           end
           i = i + 1
@@ -966,6 +1252,7 @@ function GluePad_Back()
             if f.Click then
               f:Click()
             end
+            GluePad_Disarm()
             return
           end
           i = i + 1
@@ -981,13 +1268,14 @@ function GluePad_Back()
     if oz ~= nil then
       local i = 1
       while i <= table.getn(oz) do
-        if string.find(oz[i].nm, "Cancel") then
-          local f = oz[i].ref
-          if f.Click then
-            f:Click()
+          if string.find(oz[i].nm, "Cancel") then
+            local f = oz[i].ref
+            if f.Click then
+              f:Click()
+            end
+            GluePad_Disarm()
+            return
           end
-          return
-        end
         i = i + 1
       end
     end
@@ -999,13 +1287,14 @@ function GluePad_Back()
     if az ~= nil then
       local i = 1
       while i <= table.getn(az) do
-        if string.find(az[i].nm, "Back") then
-          local f = az[i].ref
-          if f.Click then
-            f:Click()
+          if string.find(az[i].nm, "Back") then
+            local f = az[i].ref
+            if f.Click then
+              f:Click()
+            end
+            GluePad_Disarm()
+            return
           end
-          return
-        end
         i = i + 1
       end
     end
@@ -1040,6 +1329,8 @@ function GluePad_Activate()
         f:Click()
       end
     end
+    -- F11-B: o click pode abrir/fechar dialogo (refs mudam).
+    GluePad_Disarm()
     return
   end
   local it = cur()
@@ -1055,6 +1346,9 @@ function GluePad_Activate()
     if f.Click then
       f:Click()
     end
+    -- F11-B: o click pode reembaralhar/trocar a tela - desarma em vez de
+    -- rezonar velho (proximo toque constroi do zero, sem fantasma).
+    GluePad_Disarm()
   end
 end
 
