@@ -20,7 +20,7 @@
  * Nossas teclas futuras saem carimbadas; as do Steam, nao. */
 #define GLUEPAD_EXTRAINFO ((ULONG_PTR)0x47503132UL) /* "GP12" ASCII */
 
-/* Intents de navegacao (Y = dump; X = toggle ABC/123 do teclado F13b). */
+/* Intents (Y = dump sem kb, espaco com kb; X = backspace com kb, toggle sem kb). */
 #define GLUEPAD_INT_UP    0
 #define GLUEPAD_INT_DOWN  1
 #define GLUEPAD_INT_LEFT  2

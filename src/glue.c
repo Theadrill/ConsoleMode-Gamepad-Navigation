@@ -336,6 +336,39 @@ static void Glue_TopShortStr(GlueL L, char *out, unsigned cap)
     }
 }
 
+/* F13b: painel do teclado aberto? (Mbox 1/nil via IsKb). */
+static int Glue_IsKbOpen(void)
+{
+    GetContextFn getctx = (GetContextFn)GLUEPAD_ADDR_GETCONTEXT;
+    GlueL L = getctx();
+    double v = 0.0;
+    if (!L)
+        return 0;
+    Glue_RunChunk(L, "GluePad_Mbox = nil if GluePad_IsKb then GluePad_IsKb() end", 0);
+    Glue_PushGlobal(L, "GluePad_Mbox");
+    return Glue_TopNumber(L, &v) && v == 1.0;
+}
+
+/* F13b: log posicional do cursor (AKB/XDEL/YESP; sem rotulo, sem VK). */
+static void Glue_LogKbFoc(const char *tag)
+{
+    GetContextFn getctx = (GetContextFn)GLUEPAD_ADDR_GETCONTEXT;
+    GlueL L = getctx();
+    char fbuf[64];
+    char line[128];
+    int rc = -99;
+    if (L)
+    {
+        rc = Glue_RunChunk(L, "if GluePad_FocusName then GluePad_Mbox = GluePad_FocusName() end", 0);
+        Glue_PushGlobal(L, "GluePad_Mbox");
+        Glue_TopShortStr(L, fbuf, 60);
+    }
+    else
+        fbuf[0] = '\0';
+    wsprintfA(line, "GluePad F2 nav %s rc=%d foc=%s\r\n", tag, rc, fbuf);
+    GluePad_LogRaw(line);
+}
+
 static int Glue_CallL(const char *tag, const char *chunk)
 {
     GetContextFn getctx = (GetContextFn)GLUEPAD_ADDR_GETCONTEXT;
@@ -474,29 +507,39 @@ void Glue_ActIntent(int intent)
         }
         if (isnum && vkd >= -1.0 && vkd <= 255.0)
         {
-            char fbuf[64];
-            char line[128];
-            int rc2;
             /* Privacidade: NUNCA loga o VK (sequencia digitada). */
             if (vkd >= 1.0)
                 GluePad_SendKeyStamped((WORD)(int)vkd);
-            rc2 = Glue_RunChunk(LA, "if GluePad_FocusName then GluePad_Mbox = GluePad_FocusName() end", 0);
-            Glue_PushGlobal(LA, "GluePad_Mbox");
-            Glue_TopShortStr(LA, fbuf, 60);
-            wsprintfA(line, "GluePad F2 nav AKB rc=%d foc=%s\r\n", rc2, fbuf);
-            GluePad_LogRaw(line);
+            Glue_LogKbFoc("AKB");
+            return;
+        }
+        chunk = "if GluePad_Activate then GluePad_Activate() end";
+        tag = "A";
+        break;
+    }
+    case GLUEPAD_INT_X:
+        /* F13b-XY: com o painel aberto, X = backspace (convencao Steam);
+         * fechado, segue o toggle (no-op). */
+        if (Glue_IsKbOpen())
+        {
+            GluePad_SendKeyStamped(0x08);
+            Glue_LogKbFoc("XDEL");
+            return;
+        }
+        chunk = "if GluePad_KbToggle then GluePad_KbToggle() end";
+        tag = "X";
+        break;
+    case GLUEPAD_INT_B: chunk = "if GluePad_Back then GluePad_Back() end"; tag = "B"; break;
+    case GLUEPAD_INT_DUMP:
+        /* F13b-XY: com o painel aberto, Y = espaco (convencao Steam);
+         * fechado, Y = foto (dump). */
+        if (Glue_IsKbOpen())
+        {
+            GluePad_SendKeyStamped(0x20);
+            Glue_LogKbFoc("YESP");
         }
         else
         {
-            chunk = "if GluePad_Activate then GluePad_Activate() end";
-            tag = "A";
-        }
-        break;
-    }
-    case GLUEPAD_INT_X: chunk = "if GluePad_KbToggle then GluePad_KbToggle() end"; tag = "X"; break;
-    case GLUEPAD_INT_B: chunk = "if GluePad_Back then GluePad_Back() end"; tag = "B"; break;
-    case GLUEPAD_INT_DUMP:
-    {
         /* F4a: Y = fotografia a tela atual (dump sob demanda p/ descobrir
          * dialogo/realm/criacao; so nomes de frame, sem texto/dado). */
         GetContextFn getctx = (GetContextFn)GLUEPAD_ADDR_GETCONTEXT;
@@ -511,8 +554,8 @@ void Glue_ActIntent(int intent)
 #else
         (void)rc2;
 #endif
+        }
         return;
-    }
     case GLUEPAD_INT_BOOT: Glue_BootNav(); return;
     default: return;
     }

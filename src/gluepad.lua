@@ -797,6 +797,35 @@ local function kbsetlabel(key, label)
   return 0, nil
 end
 
+-- F13b-pos (painel cobria o campo de cima na senha): ancora no EditBox
+-- mais alto da tela (login: acima do Account, nenhum campo coberto).
+-- Usa o collect (so visiveis); maior tp = mais alto na tela.
+local function kbanchor(panel, field)
+  local tgt = field
+  local items, n = collect()
+  local best = nil
+  local besttp = nil
+  local i = 1
+  while i <= n do
+    local it = items[i]
+    if it.t == "EditBox" then
+      if besttp == nil or it.tp > besttp then
+        besttp = it.tp
+        best = it.ref
+      end
+    end
+    i = i + 1
+  end
+  if best ~= nil then
+    tgt = best
+  end
+  pcall(function()
+    panel:ClearAllPoints()
+    panel:SetPoint("BOTTOM", tgt, "TOP", 0, 12)
+    panel:Show()
+  end)
+end
+
 -- Constroi o painel UMA vez (cache global: defs roda 2x por processo,
 -- licao do magenta duplo - local morre, global sobrevive).
 local function kbbuild(g, field)
@@ -822,8 +851,8 @@ local function kbbuild(g, field)
     bg:SetTexture(0, 0, 0, 0.85)
     bg:ClearAllPoints()
     bg:SetAllPoints(panel)
-    panel:SetPoint("BOTTOM", field, "TOP", 0, 12)
-    panel:Show()
+    panel:SetFrameStrata("TOOLTIP")
+    kbanchor(panel, field)
   end)
   local keys = {}
   local lab = {}
@@ -903,11 +932,7 @@ local function kbopen(g, field)
   end
   local cx = GluePad._kbcache
   if cx ~= nil and cx.panel ~= nil and cx.keys ~= nil and cx.lab ~= nil then
-    pcall(function()
-      cx.panel:ClearAllPoints()
-      cx.panel:SetPoint("BOTTOM", field, "TOP", 0, 12)
-      cx.panel:Show()
-    end)
+    kbanchor(cx.panel, field)
     g.kb = { mode = "ABC", r = 1, c = 1, keys = cx.keys, lab = cx.lab, panel = cx.panel }
     kbcursor(g)
     return
@@ -925,21 +950,33 @@ local function kbmove(g, dir)
   end
   local r = g.kb.r
   local c = g.kb.c
+  -- F13b-wrap (pedido do dono): SO no teclado as bordas pulam p/ o
+  -- lado oposto (Q<->P etc.). Nas telas segue sem wrap (regra F8).
   if dir == "LEFT" then
     if c > 1 then
       g.kb.c = c - 1
+    else
+      g.kb.c = table.getn(g.kb.keys[r])
     end
   elseif dir == "RIGHT" then
     local m = table.getn(g.kb.keys[r])
     if c < m then
       g.kb.c = c + 1
+    else
+      g.kb.c = 1
     end
   elseif dir == "UP" or dir == "DOWN" then
     local nr = r - 1
     if dir == "DOWN" then
       nr = r + 1
     end
-    if nr >= 1 and nr <= 4 and g.kb.keys[nr] ~= nil then
+    if nr < 1 then
+      nr = 4
+    end
+    if nr > 4 then
+      nr = 1
+    end
+    if g.kb.keys[nr] ~= nil then
       local m = table.getn(g.kb.keys[nr])
       if m >= 1 then
         local best = c
@@ -1016,6 +1053,16 @@ function GluePad_KbToggle()
   end
   g.kb.mode = nm
   kbcursor(g)
+end
+
+-- F13b: painel aberto? (X/Y do pad viram backspace/espaco; Y volta a
+-- ser dump com o painel fechado). Escreve 1/nil no Mbox p/ o C ler.
+function GluePad_IsKb()
+  if GluePad.kb ~= nil then
+    GluePad_Mbox = 1
+  else
+    GluePad_Mbox = nil
+  end
 end
 
 -- F13b: A no painel. Retorna VK (numero) p/ a DLL enviar carimbado,

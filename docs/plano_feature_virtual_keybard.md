@@ -54,8 +54,10 @@ B fecha, regressão login/char (dump sem `GluePadKB` nas zonas).
 
 ## F13b — Digitação visível (username)
 
-**Escopo:** novo `GLUEPAD_INT_X` (toggle ABC/123, com edge); no modo-kb,
-A **envia** (`SendInput` carimbado) em vez de `:Click()`; DEL=backspace;
+**Escopo:** novo `GLUEPAD_INT_X` (com edge; com kb = backspace, sem
+kb = toggle); no modo-kb, A **envia** (`SendInput` carimbado) em vez
+de `:Click()`; Y = espaco com kb, dump com kb fechado (convencao
+Steam: X apaga, Y espaca); DEL=backspace;
 OK fecha; campo nunca perde foco (regra de 1 linha: nenhuma tecla do
 grid é clicável via `:Click()` nosso).
 **Ritual:** digitar o usuário só no pad → `grep` no log provando zero
