@@ -101,16 +101,23 @@ tudo OK; `grep` de vazamento 0/0, só `KB:r,c[S]` posicional).
 LB físico quebrado do dono virou botões traseiros = TAB (`0x09`);
 RB = Left Control (`0xA2`) — captura Deck 2026-10-11 (ver seção Deck).
 
-## F13e — Endurecimento + regressão geral ⏳ PARCIAL (falta wizard)
+## F13e — Endurecimento + regressão geral ✅ VALIDADA 2026-10-11
+(ressalva wizard, ver abaixo)
 
 **Escopo:** hold não repete A (já é edge — provar); sync/dialog/addons
 convivem com painel aberto; `Disarm` cobre teclado; homologação das
 telas antigas com o código novo instalado.
 **Critério:** 5/5 sem regressão + F13a–d revalidados por cima.
-**Resultado parcial 2026-10-11:** hold não repete (A/LB/RB/X/Y, provado
+**Resultado 2026-10-11:** hold não repete (A/LB/RB/X/Y, provado
 segurando); login por clique de mouse com painel aberto fecha correto;
 diálogo de erro com painel aberto revalidado (fecha junto); addons OK
-com o código novo; todas as telas homologadas **menos wizard**.
+com o código novo; todas as telas homologadas **menos wizard**;
+F13a–d revalidados por cima.
+**Ressalva wizard:** não alcançável no fluxo Turtle atual (conta nova
+cai direto no server asignado; gatilho do `RealmWizard` é server-side,
+sugestão de realm). Caminho F10 implementado a partir de foto real
+(5 checks + Cancel, B = Cancel) e intacto desde então — sem regressão
+esperada. Se o wizard um dia aparecer, o ritual é o da F10.
 
 ## Riscos registrados
 
@@ -127,5 +134,4 @@ com o código novo; todas as telas homologadas **menos wizard**.
   down/up (2 amostras, `screen=0x00`, assumido e confirmado no teste).
 - Mapeamento F13d (pedido do dono): LB = shift momentâneo, RB = toggle
   ABC/123 (X segue backspace, Y segue espaço com kb aberto).
-- `KB_BUMP` final em aberto (10px é prova; candidato ~3px — decisão do
-  dono pendente).
+- `KB_BUMP` = 10 final (aprovado pelo dono 2026-10-11).

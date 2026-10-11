@@ -715,7 +715,7 @@ end
 -- GetFont/SetFont com pcall: se a API nao existir no glue, vira no-op e
 -- o shift segue valendo na logica. Par simetrico (sobe UMA vez no arme,
 -- desce UMA vez no consumo/fecho, sempre guardado por g.kb.shift).
--- F13d-ind: prova (10px p/ validar; o valor final vem depois).
+-- F13d-ind: prova (10px, valor final aprovado pelo dono 2026-10-11).
 local KB_BUMP = 10
 
 local function kbresize(g, delta)
