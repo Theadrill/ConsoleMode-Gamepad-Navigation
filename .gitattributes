@@ -1,0 +1,7 @@
+# GluePad: fontes sempre LF. CR cru dentro de string C quebra o build
+# (foi o caso do glue_lua.h gerado a partir de gluepad.lua em CRLF) e a
+# regra do projeto ja exige LF puro nos artefatos de deploy.
+*.lua text eol=lf
+*.c text eol=lf
+*.h text eol=lf
+*.py text eol=lf

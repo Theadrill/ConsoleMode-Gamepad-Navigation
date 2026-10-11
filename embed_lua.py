@@ -11,6 +11,7 @@ except UnicodeDecodeError as e:
 if "\0" in text:
     print("ERRO: NUL no fonte lua")
     sys.exit(1)
+text = text.replace("\r\n", "\n").replace("\r", "\n")
 esc = text.replace("\\", "\\\\").replace('"', '\\"')
 lines = esc.split("\n")
 with open(dst, "w", newline="\n") as f:
