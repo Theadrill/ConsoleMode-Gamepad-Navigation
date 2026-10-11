@@ -6,7 +6,6 @@
 
 static HHOOK g_hook = NULL;
 static int s_aDown = 0;
-static int s_aPosted = 0;
 static int s_bDown = 0;
 static int s_yDown = 0;
 static int s_xDown = 0;
@@ -78,18 +77,8 @@ static LRESULT CALLBACK KeyCap_Proc(int nCode, WPARAM wParam, LPARAM lParam)
                 int post = 0;
                 if (k->vkCode == (DWORD)GLUEPAD_VK_A)
                 {
-                    if (down && !s_aDown) { s_aDown = 1; s_aPosted = 1; post = 1; }
-                    if (!down)
-                    {
-                        s_aDown = 0;
-                        /* F14-holdA: a solta vira intent (o C decide: timer
-                         * pendente = toque/seleciona; resto = ignora). */
-                        if (s_aPosted)
-                        {
-                            s_aPosted = 0;
-                            PostMessageA(h, GLUEPAD_WM_ACT, (WPARAM)GLUEPAD_INT_AUP, 0);
-                        }
-                    }
+                    if (down && !s_aDown) { s_aDown = 1; post = 1; }
+                    if (!down) s_aDown = 0;
                 }
                 else if (k->vkCode == (DWORD)GLUEPAD_VK_B)
                 {
@@ -157,7 +146,7 @@ static LRESULT CALLBACK KeyCap_Proc(int nCode, WPARAM wParam, LPARAM lParam)
         {
             /* Solta fora do glue reseta edge (sem fantasma ao voltar;
              * LB fora do glue nao posta LBUP: sem painel, sem shift). */
-            if (k->vkCode == (DWORD)GLUEPAD_VK_A) { s_aDown = 0; s_aPosted = 0; }
+            if (k->vkCode == (DWORD)GLUEPAD_VK_A) s_aDown = 0;
             if (k->vkCode == (DWORD)GLUEPAD_VK_B) s_bDown = 0;
             if (k->vkCode == (DWORD)GLUEPAD_VK_Y) s_yDown = 0;
             if (k->vkCode == (DWORD)GLUEPAD_VK_X) s_xDown = 0;

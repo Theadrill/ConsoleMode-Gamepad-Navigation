@@ -1372,6 +1372,30 @@ function GluePad_Boot()
   g.zones = zones
   g.zi = 1
   g.ii = 1
+  -- F14-enterfirst: o foco nasce no EnterWorld (a selecao nativa manda;
+  -- sem clique forcado, sem briga com o cliente). 1 toque no A = entra.
+  if g.mode == "char" then
+    local az = zones["ACOES"]
+    if az ~= nil and table.getn(az) > 0 then
+      local oi = 1
+      while oi <= table.getn(order) do
+        if order[oi] == "ACOES" then
+          g.zi = oi
+        end
+        oi = oi + 1
+      end
+      local an = table.getn(az)
+      local ai = 1
+      while ai <= an do
+        if string.find(az[ai].nm, "EnterWorld") then
+          g.ii = ai
+          ai = an + 1
+        else
+          ai = ai + 1
+        end
+      end
+    end
+  end
   g.hist = {}
   g.ready = true
   -- Botoes primeiro (a barra resolve a partir deles).
@@ -1710,6 +1734,17 @@ function GluePad_Move(dir)
   g.zi = tgt.zi
   g.ii = tgt.ii
   show(cur())
+  -- F14-autosel: na fileira, pousar JA seleciona (preview acompanha o
+  -- foco; sem Disarm, sem mover nada - so o :Click() de selecao).
+  if g.mode == "char" and g.order[g.zi] == "PERSONAGENS" then
+    local it2 = cur()
+    if it2 ~= nil then
+      local f2 = it2.ref
+      if f2.Click then
+        f2:Click()
+      end
+    end
+  end
 end
 
 function GluePad_Back()
@@ -1896,44 +1931,20 @@ function GluePad_Activate()
     -- F13a: A no campo abre o painel mudo (caret fica no campo).
     kbopen(g, f)
   else
-    if f.Click then
-      f:Click()
-    end
-    -- F14-keepsel: clique na fileira de chars e so selecao (a tela nao
-    -- muda) - mantem o foco em vez de desarmar. Sem isso, o proximo A
-    -- reconstroi do zero no char 1 em vez de continuar no focado.
+    -- F14-tapenter: na fileira, toque JA entra no mundo (preview acompanha
+    -- via autosel; sem hold, sem 250ms). Resto mantem o fluxo padrao.
     if g.mode == "char" and g.order ~= nil and
        g.order[g.zi] == "PERSONAGENS" then
-      show(cur())
+      GluePad_EnterWorld()
       return
+    end
+    if f.Click then
+      f:Click()
     end
     -- F11-B: o click pode reembaralhar/trocar a tela - desarma em vez de
     -- rezonar velho (proximo toque constroi do zero, sem fantasma).
     GluePad_Disarm()
   end
-end
-
--- F14-holdA: fileira de chars focada? (Mbox 1/nil p/ o C armar o timer
--- do A segurado. So vale em char sem dialogo/kb; resto = nil = A normal.)
-function GluePad_CharRow()
-  local g = GluePad
-  if not g.ready or g.mode ~= "char" then
-    return
-  end
-  if g.dlg ~= nil or g.kb ~= nil then
-    return
-  end
-  if g.order == nil or g.zones == nil then
-    return
-  end
-  if g.order[g.zi] ~= "PERSONAGENS" then
-    return
-  end
-  local z = g.zones["PERSONAGENS"]
-  if z == nil or z[g.ii] == nil then
-    return
-  end
-  GluePad_Mbox = 1
 end
 
 -- F14-holdA: entra no mundo com o char focado (seleciona o focado e

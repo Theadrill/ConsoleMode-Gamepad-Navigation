@@ -38,8 +38,6 @@
 #define GLUEPAD_INT_LB    9
 #define GLUEPAD_INT_RB    10
 #define GLUEPAD_INT_LBUP  11
-/* F14-holdA: solta do A (so com timer pendente vira selecao; resto ignora). */
-#define GLUEPAD_INT_AUP   12
 
 int KeyCap_Install(HINSTANCE hinst);
 void KeyCap_Uninstall(void);
