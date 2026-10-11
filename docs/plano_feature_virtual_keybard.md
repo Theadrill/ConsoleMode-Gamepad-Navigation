@@ -86,20 +86,31 @@ salvar rastro; diálogo de erro com teclado aberto fecha junto
 **Resultado:** validada in-game (login completo só no pad).
 `kbclose` limpa o Mbox (fecha sem rastro).
 
-## F13d — Nome de char (shift + validação do jogo) ⏳ PENDENTE
+## F13d — Nome de char (shift + validação do jogo) ✅ VALIDADA 2026-10-11
 
-**Escopo:** maiúsculas via `shift` carimbado; respeitar
+**Escopo:** shift **momentâneo** no LB (segura LB + A = maiúscula,
+solta = normal; vários A's seguidos todos maiúsculos); RB = toggle
+ABC/123; indicador visual: letras `+KB_BUMP`px com shift armado
+(GetFont/SetFont com pcall, sem crash se a API não existir); respeitar
 `maxLetters`/regras do Turtle (o campo valida — observar, não
 contornar); sem criar char ainda (só nome válido/inválido).
 **Ritual:** criação → digita nome → jogo aceita/recusa como no teclado.
 **Critério:** paridade total com teclado físico.
+**Resultado:** validada in-game (limite de caracteres respeitado, LB/RB
+tudo OK; `grep` de vazamento 0/0, só `KB:r,c[S]` posicional).
+LB físico quebrado do dono virou botões traseiros = TAB (`0x09`);
+RB = Left Control (`0xA2`) — captura Deck 2026-10-11 (ver seção Deck).
 
-## F13e — Endurecimento + regressão geral ⏳ PENDENTE
+## F13e — Endurecimento + regressão geral ⏳ PARCIAL (falta wizard)
 
 **Escopo:** hold não repete A (já é edge — provar); sync/dialog/addons
 convivem com painel aberto; `Disarm` cobre teclado; homologação das
 telas antigas com o código novo instalado.
 **Critério:** 5/5 sem regressão + F13a–d revalidados por cima.
+**Resultado parcial 2026-10-11:** hold não repete (A/LB/RB/X/Y, provado
+segurando); login por clique de mouse com painel aberto fecha correto;
+diálogo de erro com painel aberto revalidado (fecha junto); addons OK
+com o código novo; todas as telas homologadas **menos wizard**.
 
 ## Riscos registrados
 
@@ -108,13 +119,13 @@ telas antigas com o código novo instalado.
 3. Acentos/case (validar na criação, campo visível e seguro).
 4. Hold segurando A não pode repetir digitação (edge puro por construção).
 
-## Pendente Steam Deck (revisitar — perguntar na troca de fases)
+## Steam Deck — RESOLVIDO 2026-10-11
 
-- LB/RB físicos chegam como teclas virtuais do Steam, mas os códigos
-  exatos (`key vk=` no log) ainda não foram capturados porque o Deck
-  está guardado. Por isso a F13 usa só X e Y (X = backspace com kb,
-  toggle sem kb; Y = espaço com kb, dump sem kb).
-- Quando o usuário estiver no Deck: apertar LB/RB no glue, ler o `vk`
-  no log e mapear (candidato: toggle de caps/shift).
-- A IA deve PERGUNTAR sobre isso a cada troca de fase (b→c, c→d, d→e)
-  até estar resolvido ou ser explicitamente descartado.
+- LB físico quebrado → botões traseiros mapeados p/ TAB. Captura no
+  glue: `vk=0x09` down/up (2 amostras, `screen=0x00`).
+- RB = Left Control no perfil Steam. Captura no glue: `vk=0xA2`
+  down/up (2 amostras, `screen=0x00`, assumido e confirmado no teste).
+- Mapeamento F13d (pedido do dono): LB = shift momentâneo, RB = toggle
+  ABC/123 (X segue backspace, Y segue espaço com kb aberto).
+- `KB_BUMP` final em aberto (10px é prova; candidato ~3px — decisão do
+  dono pendente).
