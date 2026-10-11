@@ -683,6 +683,317 @@ local function setdlg(g, dlg)
   return false
 end
 
+-- F13a: teclado virtual (painel mudo navegavel, sem digitar).
+-- Teclas sao Frames (nao Button/EditBox/CheckButton): collect()/Sniff()/
+-- Dump()/Screen() nem as veem - exclusao por construcao, sem filtro por
+-- nome. Nomes GluePadKB* (nossos, permitido) so p/ diagnostico via foc=.
+-- Foco mora no campo (caret, SetFocus mantido); o anel ouro anda nas
+-- teclas. A/B nao digitam na F13a (mudo); B fecha o painel.
+-- Layout aprovado: 3 fileiras de letras + fileira [esp][del][ABC/123][OK].
+-- Modo 123 existe como dado (a troca vem na F13b com INT_X).
+local KB_ROWS_ABC = { "QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM" }
+local KB_ROWS_123 = { "1234567890", "-/:;()$&@.", ",?!'#%*+_" }
+local KB_FUNCS = { "esp", "del", "ABC/123", "OK" }
+local KB_KW = 44
+local KB_KH = 36
+local KB_GAP = 6
+local KB_PAD = 12
+-- Larguras da fileira de funcao (esp larga, resto estreito).
+local KB_FW1 = 180
+local KB_FW2 = 80
+local KB_FW3 = 110
+local KB_FW4 = 80
+
+local function kbrows(mode)
+  if mode == "123" then
+    return KB_ROWS_123
+  end
+  return KB_ROWS_ABC
+end
+
+local function kbkeylabel(g)
+  if g.kb == nil then
+    return nil
+  end
+  if g.kb.r <= 3 then
+    local row = kbrows(g.kb.mode)[g.kb.r]
+    if g.kb.c <= string.len(row) then
+      return string.sub(row, g.kb.c, g.kb.c)
+    end
+    return "?"
+  end
+  return KB_FUNCS[g.kb.c]
+end
+
+local function kbclose(g)
+  if g.kb ~= nil and g.kb.panel ~= nil then
+    pcall(function() g.kb.panel:Hide() end)
+  end
+  g.kb = nil
+end
+
+local function kbcursor(g)
+  if g.kb == nil or g.kb.keys == nil then
+    return
+  end
+  local row = g.kb.keys[g.kb.r]
+  if row == nil then
+    return
+  end
+  local key = row[g.kb.c]
+  if key ~= nil then
+    ringshow(key)
+  end
+end
+
+-- F13a-fix (letras invisiveis): checa se a fonte vale. So vale a
+-- FontString cujo GetText ecoa o rotulo E cuja GetStringWidth > 0
+-- (largura do texto rasterizado; 0 = sem fonte). Sem GetStringWidth
+-- no cliente, vale o eco do texto.
+local function kbcheck(key, fs, label)
+  local ok = pcall(function()
+    fs:ClearAllPoints()
+    fs:SetAllPoints(key)
+    fs:SetText(label)
+    fs:SetTextColor(0.9, 0.85, 0.7)
+  end)
+  if not ok then
+    return false
+  end
+  local back = nil
+  pcall(function() back = fs:GetText() end)
+  if back ~= label then
+    return false
+  end
+  local sw = call1(fs, "GetStringWidth")
+  if type(sw) == "number" then
+    return sw > 0
+  end
+  return true
+end
+
+-- Cascata de fonte (1o passo que passa no kbcheck vence):
+-- 1=GameFontNormal, 2=GameFontNormalSmall, 3=FRIZQT 14, 4=FRIZQT 12.
+-- Retorna o passo ou 0. Leitura GetText = nosso rotulo (nunca EditBox).
+local function kbsetlabel(key, label)
+  local okf, fs = pcall(function()
+    return key:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  end)
+  if okf and fs ~= nil and kbcheck(key, fs, label) then
+    return 1
+  end
+  local ok2, fs2 = pcall(function()
+    return key:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  end)
+  if ok2 and fs2 ~= nil and kbcheck(key, fs2, label) then
+    return 2
+  end
+  local ok3, fs3 = pcall(function()
+    return key:CreateFontString(nil, "OVERLAY")
+  end)
+  if ok3 and fs3 ~= nil then
+    local sz = 14
+    while sz >= 12 do
+      local step = 3
+      if sz < 14 then
+        step = 4
+      end
+      local px = sz
+      local okf2 = pcall(function()
+        fs3:SetFont("Fonts\\FRIZQT__.TTF", px)
+      end)
+      if okf2 and kbcheck(key, fs3, label) then
+        return step
+      end
+      sz = sz - 2
+    end
+  end
+  return 0
+end
+
+-- Constroi o painel UMA vez (cache global: defs roda 2x por processo,
+-- licao do magenta duplo - local morre, global sobrevive).
+local function kbbuild(g, field)
+  kbclose(g)
+  local par = ringparent()
+  if par == nil then
+    return false
+  end
+  local rows = kbrows("ABC")
+  local n1 = string.len(rows[1])
+  local w = n1 * KB_KW + (n1 - 1) * KB_GAP + 2 * KB_PAD
+  local h = 4 * KB_KH + 3 * KB_GAP + 2 * KB_PAD
+  local ok, p = pcall(CreateFrame, "Frame", "GluePadKB_Panel", par)
+  if not ok or p == nil then
+    return false
+  end
+  local panel = p
+  pcall(function()
+    panel:SetWidth(w)
+    panel:SetHeight(h)
+    panel:EnableMouse(false)
+    local bg = panel:CreateTexture(nil, "BACKGROUND")
+    bg:SetTexture(0, 0, 0, 0.85)
+    bg:ClearAllPoints()
+    bg:SetAllPoints(panel)
+    panel:SetPoint("BOTTOM", field, "TOP", 0, 12)
+    panel:Show()
+  end)
+  local keys = {}
+  local r = 1
+  while r <= 4 do
+    keys[r] = {}
+    local n = 0
+    if r <= 3 then
+      n = string.len(rows[r])
+    else
+      n = 4
+    end
+    local roww = 0
+    if r <= 3 then
+      roww = n * KB_KW + (n - 1) * KB_GAP
+    else
+      roww = KB_FW1 + KB_FW2 + KB_FW3 + KB_FW4 + 3 * KB_GAP
+    end
+    local x = (w - roww) / 2
+    local y = KB_PAD + (r - 1) * (KB_KH + KB_GAP)
+    local c = 1
+    while c <= n do
+      local kw = KB_KW
+      local label = nil
+      if r <= 3 then
+        label = string.sub(rows[r], c, c)
+      else
+        label = KB_FUNCS[c]
+        if c == 1 then
+          kw = KB_FW1
+        elseif c == 2 then
+          kw = KB_FW2
+        elseif c == 3 then
+          kw = KB_FW3
+        else
+          kw = KB_FW4
+        end
+      end
+      local knm = "GluePadKB_" .. tostring(r) .. "_" .. tostring(c)
+      local okk, key = pcall(CreateFrame, "Frame", knm, panel)
+      if okk and key ~= nil then
+        pcall(function()
+          key:SetWidth(kw)
+          key:SetHeight(KB_KH)
+          key:EnableMouse(false)
+          local t = key:CreateTexture(nil, "BACKGROUND")
+          t:SetTexture(0.12, 0.12, 0.12, 0.9)
+          t:ClearAllPoints()
+          t:SetAllPoints(key)
+          key:SetPoint("TOPLEFT", panel, "TOPLEFT", x, -y)
+          local st = kbsetlabel(key, label)
+          if st > 0 and GluePad._kbfont == nil then
+            GluePad._kbfont = st
+          end
+          key:Show()
+        end)
+        keys[r][c] = key
+      end
+      x = x + kw + KB_GAP
+      c = c + 1
+    end
+    r = r + 1
+  end
+  g.kb = { mode = "ABC", r = 1, c = 1, keys = keys, panel = panel }
+  kbcursor(g)
+  return true
+end
+
+-- Abre o painel (reaproveita o cache; re-ancora no campo atual).
+local function kbopen(g, field)
+  if g.kb ~= nil then
+    return
+  end
+  local cx = GluePad._kbcache
+  if cx ~= nil and cx.panel ~= nil and cx.keys ~= nil then
+    pcall(function()
+      cx.panel:ClearAllPoints()
+      cx.panel:SetPoint("BOTTOM", field, "TOP", 0, 12)
+      cx.panel:Show()
+    end)
+    g.kb = { mode = "ABC", r = 1, c = 1, keys = cx.keys, panel = cx.panel }
+    kbcursor(g)
+    return
+  end
+  if kbbuild(g, field) then
+    GluePad._kbcache = { keys = g.kb.keys, panel = g.kb.panel }
+  end
+end
+
+-- Anda no grid (clamp, sem wrap - regra F8). Vertical casa por centro-x
+-- (fileiras tem larguras diferentes); sem geometria, espelha o indice.
+local function kbmove(g, dir)
+  if g.kb == nil or g.kb.keys == nil then
+    return
+  end
+  local r = g.kb.r
+  local c = g.kb.c
+  if dir == "LEFT" then
+    if c > 1 then
+      g.kb.c = c - 1
+    end
+  elseif dir == "RIGHT" then
+    local m = table.getn(g.kb.keys[r])
+    if c < m then
+      g.kb.c = c + 1
+    end
+  elseif dir == "UP" or dir == "DOWN" then
+    local nr = r - 1
+    if dir == "DOWN" then
+      nr = r + 1
+    end
+    if nr >= 1 and nr <= 4 and g.kb.keys[nr] ~= nil then
+      local m = table.getn(g.kb.keys[nr])
+      if m >= 1 then
+        local best = c
+        if best > m then
+          best = m
+        end
+        local curk = g.kb.keys[r][c]
+        local cx = nil
+        if curk ~= nil then
+          local lx = call1(curk, "GetLeft")
+          local lw = call1(curk, "GetWidth")
+          if type(lx) == "number" and type(lw) == "number" then
+            cx = lx + lw / 2
+          end
+        end
+        if cx ~= nil then
+          local i = 1
+          local bestd = nil
+          while i <= m do
+            local k = g.kb.keys[nr][i]
+            if k ~= nil then
+              local lx = call1(k, "GetLeft")
+              local lw = call1(k, "GetWidth")
+              if type(lx) == "number" and type(lw) == "number" then
+                local d = lx + lw / 2 - cx
+                if d < 0 then
+                  d = -d
+                end
+                if bestd == nil or d < bestd then
+                  bestd = d
+                  best = i
+                end
+              end
+            end
+            i = i + 1
+          end
+        end
+        g.kb.r = nr
+        g.kb.c = best
+      end
+    end
+  end
+  kbcursor(g)
+end
+
 -- F7-diag: nome do foco atual (so nomes de frame; p/ calibrar o espacial).
 function GluePad_FocusName()
   local g = GluePad
@@ -692,6 +1003,14 @@ function GluePad_FocusName()
       return it.nm
     end
     return "dlg?"
+  end
+  -- F13a: cursor do teclado (nunca zona; nunca texto do campo).
+  if g.kb ~= nil then
+    local lb = kbkeylabel(g)
+    if lb ~= nil then
+      return "KB:" .. lb
+    end
+    return "KB:?"
   end
   local it = cur()
   if it ~= nil and it.nm ~= nil then
@@ -708,11 +1027,20 @@ function GluePad_Boot()
     -- Mesma tela: so sincroniza a camada dialogo (abriu/fechou sozinha)
     -- e recaptura o scroll (Up aparece ao sair do topo).
     local items, n = collect()
+    local hadkb = (g.kb ~= nil)
     setdlg(g, finddlg(items, n))
     findscroll(g, items, n)
     g.sniff = GluePad_Sniff()
     if g.dlg == nil then
-      show(cur())
+      if hadkb then
+        -- F13a: painel segue aberto; so re-ancora o anel na tecla.
+        kbcursor(g)
+      else
+        show(cur())
+      end
+    elseif hadkb then
+      -- F13a: dialogo vence; fecha o painel junto.
+      kbclose(g)
     end
     return
   end
@@ -725,6 +1053,8 @@ function GluePad_Boot()
   g.scrollDown = nil
   g.scrollBar = nil
   g.rowH = nil
+  -- F13a: troca de tela fecha o painel (cache segue p/ reabrir).
+  kbclose(g)
   -- F11-fantasma: o anel e global (nao some c/ a tela) - esconde no rebuild.
   ringhide()
   local items, n = collect()
@@ -896,6 +1226,9 @@ end
 function GluePad_Disarm()
   local g = GluePad
   ringhide()
+  -- F13a: desarma fecha o painel junto (vale p/ dialogo de erro no meio
+  -- da digitacao).
+  kbclose(g)
   g.ready = nil
   g.zones = nil
   g.order = nil
@@ -979,6 +1312,10 @@ function GluePad_Sync()
   end
   local items, n = collect()
   local dlg = finddlg(items, n)
+  -- F13a: dialogo que abre com o painel aberto fecha o painel.
+  if dlg ~= nil and g.kb ~= nil then
+    kbclose(g)
+  end
   if dlg ~= nil then
     if g.dlg == nil then
       g.dlg = dlg
@@ -1092,6 +1429,11 @@ function GluePad_Move(dir)
     end
     return
   end
+  -- F13a: painel aberto captura o D-pad (anda no grid, nunca nas zonas).
+  if g.kb ~= nil then
+    kbmove(g, dir)
+    return
+  end
   local z = g.zones[g.order[g.zi]]
   if z == nil or table.getn(z) == 0 then
     return
@@ -1190,6 +1532,12 @@ function GluePad_Back()
       end
     end
     GluePad_Disarm()
+    return
+  end
+  -- F13a: B com o painel aberto fecha o painel e volta o anel ao campo.
+  if g.kb ~= nil then
+    kbclose(g)
+    show(cur())
     return
   end
   -- F10-wizard: B = Cancel (sai da sugestao).
@@ -1333,6 +1681,10 @@ function GluePad_Activate()
     GluePad_Disarm()
     return
   end
+  -- F13a: painel aberto = A mudo (ainda nao digita; F13b liga o envio).
+  if g.kb ~= nil then
+    return
+  end
   local it = cur()
   if it == nil then
     return
@@ -1342,6 +1694,8 @@ function GluePad_Activate()
     if f.SetFocus then
       f:SetFocus()
     end
+    -- F13a: A no campo abre o painel mudo (caret fica no campo).
+    kbopen(g, f)
   else
     if f.Click then
       f:Click()
@@ -1363,5 +1717,19 @@ function GluePad_Dump()
     out[m] = it.t .. "|" .. it.nm .. "|1|1|" .. tostring(it.tp) .. "|" .. tostring(it.lf) .. ";"
     i = i + 1
   end
-  return "SCR=" .. GluePad_Screen() .. " N=" .. tostring(n) .. " " .. table.concat(out, "")
+  -- F13a: estado do painel (modo + cursor; teclas Frame nao entram no
+  -- collect - a ausencia de GluePadKB aqui prova a exclusao).
+  local kbstr = "-"
+  if GluePad.kb ~= nil then
+    local lb = kbkeylabel(GluePad)
+    if lb == nil then
+      lb = "?"
+    end
+    local ff = 0
+    if GluePad._kbfont ~= nil then
+      ff = GluePad._kbfont
+    end
+    kbstr = GluePad.kb.mode .. ":" .. lb .. " f" .. tostring(ff)
+  end
+  return "SCR=" .. GluePad_Screen() .. " N=" .. tostring(n) .. " KB=" .. kbstr .. " " .. table.concat(out, "")
 end
